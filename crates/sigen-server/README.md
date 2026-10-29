@@ -87,6 +87,22 @@ stale sensor metrics, just like the live exporter. This preview is browser-only;
 the server's `/metrics` endpoint continues to expose real server status.
 This UI flag does not stop the server's existing background hardware polling.
 
+For a live demo that exercises actual Modbus TCP, start the bundled simulator
+in another terminal:
+
+```sh
+cargo run -p sigen-modbus --bin sigen-simulator -- --scenario cycle
+```
+
+Then run this server with `--address 127.0.0.1:1502 --unit-id 1` and open `/`
+without `?demo=1`. Use separate `--alerts-file` and `--write-audit-file` paths
+for demo state. The simulator identifies itself as `SigenStor SIMULATOR`, supports
+live controls, and cycles through solar, night, battery alarm and off-grid states.
+Real server integrations remain active: leave Pushover/MQTT credentials unset
+unless you want simulated events delivered to those services. See the
+[simulator instructions](../sigen-modbus/README.md#live-modbus-tcp-simulator)
+for all scenarios and supported registers.
+
 The live dashboard provides **whole-plant** controls for remote EMS enable, its operating mode,
 and backup SOC. These write plant unit 247, regardless of `--unit-id`, and can
 affect other inverters in the same plant. `--unit-id` selects monitored hardware.

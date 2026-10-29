@@ -1,6 +1,6 @@
 # sigen-modbus
 
-Blocking Rust client for Sigenergy Modbus TCP, based on
+Blocking Rust client and standalone demo simulator for Sigenergy Modbus TCP, based on
 [Sigenergy Modbus Protocol V2.7, released 2025-05-23](https://www.sigenergy.com/uploads/us_download/1755488219226583.pdf).
 Register addresses, types and gains come from sections 5.1–5.5; framing and
 exceptions from section 6. Multiword values use the most significant word first,
@@ -98,6 +98,68 @@ register's documented gain. Positive grid power means import; negative means
 export. Plant battery power is positive while charging and negative while
 discharging. The inverter battery power field is exposed with its raw signed
 convention; V2.7 does not explicitly define its sign in that table.
+
+## Live Modbus TCP simulator
+
+Run a virtual inverter with the same on-wire registers used by `sigen-server`:
+
+```sh
+cargo run -p sigen-modbus --bin sigen-simulator -- --bind 127.0.0.1:1502 --scenario solar
+```
+
+In another terminal, connect the real server:
+
+```sh
+cargo run -p sigen-server -- --address 127.0.0.1:1502 --unit-id 1 \
+  --alerts-file /tmp/sigen-demo-alerts.json --write-audit-file /tmp/sigen-demo-writes.jsonl
+```
+
+Open **http://127.0.0.1:3000/** (without `?demo=1`). This exercises actual TCP,
+Modbus decoding, hardware polling, controls, alerts, MQTT and Prometheus. The
+model and serial number clearly identify simulated hardware. Leave notification
+and MQTT credentials unset unless you want these real server integrations to
+receive simulated events; this is distinct from the browser-only demo.
+
+The default listener is `127.0.0.1:1502`, avoiding privileged port 502. Use
+`--bind 0.0.0.0:1502` to accept other hosts, or `--bind 127.0.0.1:0` to choose a
+free port (printed at startup). `--unit-id` selects the inverter ID in 1–246;
+plant unit 247 is always present. Stop with Ctrl-C. The binary needs no extra
+features or dependencies and can also be installed with
+`cargo install --path crates/sigen-modbus --bin sigen-simulator`.
+
+| `--scenario` | Behavior |
+| --- | --- |
+| `solar` (default) | Varying solar production, battery charging and grid export |
+| `night` | No PV production; battery discharges toward its reserve |
+| `battery-alarm` | ESS insulation alarm (group 3 bit 1) |
+| `thermal-runaway` | ESS thermal runaway (group 3 bit 6), high battery temperatures and stopped generation |
+| `grid-outage` | Off-grid status and zero grid exchange |
+| `cycle` | Solar → night → battery alarm → grid outage → repeat; `--cycle-seconds N` sets seconds per phase (default 60) |
+
+Daily energy, cumulative counters and SOC advance with elapsed time. The virtual
+cluster has 20 kWh capacity, 5 kW charging/discharging capability, four PV strings
+and three-phase electrical readings. Its clock/day boundary is UTC. Daily counters
+reset at midnight; cumulative totals continue until process restart. Initial
+energy totals are seeded so a new demo is useful immediately.
+
+Both FC03 and FC04 reads are accepted for the documented telemetry and settings,
+covering the protocol's function-code ambiguity. FC06 and FC16 writes validate
+addresses, complete field widths and values; FC16 updates all fields atomically.
+Plant start/stop, EMS enable/mode, reserve/cutoff SOC and charge/discharge/PV
+limits change simulated operation. Other implemented power adjustment/limit
+fields provide readback; this is an illustrative flow model, not a complete
+firmware or electrical simulation. Settings are shared across connections and
+reset on restart. Only the plant and configured hybrid inverter are modeled;
+there is no separate AC charger, and the attached DC charger is idle.
+
+Unknown registers/reserved gaps return exception 2; invalid values/counts return
+3; unsupported functions return 1; unknown unit IDs return 11. Broadcast unit 0
+is ignored without applying writes or replying. Invalid MBAP headers close only
+that connection. The listener accepts up to 32 concurrent connections and handles
+fragmented and consecutive TCP frames. It does not enforce the hardware's minimum
+request interval; the real client still paces requests at one second. The server's
+first complete poll therefore still takes about 13 seconds, with optional details
+following during the normal polling gaps.
 
 ## Function-code discrepancy
 

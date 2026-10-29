@@ -2,7 +2,7 @@
 name = "sigen-modbus"
 version = "0.1.0"
 edition = "2024"
-description = "Sigenergy inverter and battery client over Modbus TCP"
+description = "Sigenergy Modbus TCP client and live inverter simulator"
 readme = "README.md"
 
 [dependencies]
