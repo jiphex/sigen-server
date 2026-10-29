@@ -4,6 +4,35 @@ Axum web dashboard and Prometheus exporter for one Sigenergy hybrid inverter
 and its attached battery cluster. Uses `sigen-modbus` and its V2.7 register map.
 Enable the inverter's Modbus TCP server first.
 
+## Container
+
+Build from the repository root with Podman:
+
+```sh
+podman build -f Containerfile -t sigen-server .
+podman run --rm --name sigen-server \
+  -p 127.0.0.1:3000:3000 \
+  -v sigen-data:/data \
+  -e SIGEN_ADDRESS=192.168.1.50:502 \
+  -e SIGEN_UNIT_ID=1 \
+  sigen-server
+```
+
+Docker works with the same arguments (`docker build -f Containerfile ...`).
+The multi-stage build uses a locked dependency graph and a stripped static musl
+binary. The final `scratch` image contains only the executable, CA certificates,
+and a writable `/data` directory. It runs as UID/GID `65532:65532`, with no shell
+or package manager. Dashboard assets are embedded in the executable.
+
+The container listens on `0.0.0.0:3000`; the example publishes it on host localhost.
+Alert settings and the append-only write audit log are stored in `/data/alerts.json`
+and `/data/writes.jsonl`. Use a named volume as above to retain them across container
+replacement. Bind mounts must be writable by UID/GID 65532. Pass existing `SIGEN_*`
+options through environment variables or append CLI options after the image name.
+For example, `podman run --rm sigen-server --help` prints the available options.
+Mount a private MQTT CA certificate read-only and set `SIGEN_MQTT_CA_FILE` to its
+path inside the container when needed. SIGTERM requests a graceful shutdown.
+
 ## Run
 
 Command-line options use Clap. Run `cargo run -p sigen-server -- --help` for

@@ -1,0 +1,15 @@
+# Allow only the workspace sources needed by the build (also used by Podman).
+**
+!Cargo.toml
+!Cargo.lock
+!crates/
+!crates/sigen-modbus/
+!crates/sigen-modbus/**
+!crates/sigen-server/
+!crates/sigen-server/**
+**/target/
+**/.env
+**/.env.*
+**/*.jsonl
+**/sigen-alerts.json
+**/sigen-alerts.*.tmp
