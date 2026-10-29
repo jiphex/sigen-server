@@ -10,10 +10,10 @@
 <dl class="device-display" aria-label="Device status">
 <div class="device-identity"><dt class="display-label">Device</dt><dd id="device">Connecting…</dd></div>
 <div><dt class="display-label">Connection</dt><dd id="connection" role="status">Starting</dd></div>
-<div><dt class="display-label">Last update</dt><dd id="freshness">Waiting for data…</dd></div>
+<div class="device-freshness"><dt class="display-label">Last update</dt><dd id="freshness">Waiting for data…</dd></div>
+<div class="device-message"><dt class="sr-only">Connection alert</dt><dd id="error" role="alert"></dd></div>
 </dl>
 <div class="update-toolbar"><button id="updates-toggle" type="button" aria-describedby="updates-status">Pause updates</button><p id="updates-status" role="status">Automatic updates run every 3 seconds.</p></div>
-<p id="error" role="alert"></p>
 <section class="cards" aria-label="Power and battery status">
 <article><h2>Solar</h2><p class="value" id="solar">—</p><small>PV output</small></article>
 <article><h2>Grid</h2><p class="value" id="grid">—</p><small id="grid-direction">Import / export</small></article>
