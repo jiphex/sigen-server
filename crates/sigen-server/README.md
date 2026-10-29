@@ -101,8 +101,8 @@ older than two minutes use that label even while the core connection is healthy.
 The `/api/status` response exposes these groups in `details`, each with `value`,
 `updated_unix`, `device_day`, `last_error` and `unsupported`. Grid counters are
 exact decimal strings in 0.01 kWh units to preserve U64 precision in browsers.
-These groups are currently dashboard/status data; MQTT discovery and Prometheus
-measurements retain their existing fields.
+These groups also appear in MQTT status and Prometheus metrics, using their own
+freshness limits. Home Assistant discovery retains its existing entities.
 
 A dedicated thread owns one paced Modbus connection. Polling and writes are
 serialized; HTTP stays responsive while hardware requests run. Disconnections
@@ -193,6 +193,26 @@ available energy in Wh, temperature in Celsius, frequency in hertz, and SOC/SOH
 in percent (0–100). Positive grid power means import; positive plant battery power
 means charging. Metrics carry HELP and TYPE metadata.
 
+Optional telemetry adds the following metrics when each sample is current:
+
+| Metric | Type / units |
+| --- | --- |
+| `sigen_pv_daily_energy_kwh`, `sigen_load_daily_energy_kwh` | Gauges, kWh for the device-local day; inverter PV versus whole-plant load |
+| `sigen_battery_daily_charge_energy_kwh`, `sigen_battery_daily_discharge_energy_kwh` | Gauges, this inverter’s battery daily kWh |
+| `sigen_grid_import_energy_kwh_total`, `sigen_grid_export_energy_kwh_total` | Counters, whole-plant cumulative kWh using the new statistics interface |
+| `sigen_inverter_phase_voltage_volts{phase="a"}`, `sigen_inverter_phase_current_amps{phase="a"}` | Gauges, volts/amps; phases `a`, `b`, `c` where inverter wiring makes the readings meaningful |
+| `sigen_grid_phase_power_watts{phase="a"}` | Gauge, watts; phases `a`, `b`, `c`, positive import and negative export, from the plant grid sensor |
+| `sigen_inverter_output_type`, `sigen_inverter_power_factor` | Gauges, raw wiring type and dimensionless power factor |
+
+Daily totals are gauges because they reset at local midnight. Cumulative counters
+can reset when firmware introduces the new statistics interface. Grid energy is
+formatted from the exact integer register value; Prometheus stores floating-point
+samples, so very large totals can lose precision there. Optional values are omitted
+when unsupported, failed, stale, from the previous day, or when core hardware is
+offline/stale. Energy sample freshness is ten minutes; electrical freshness is
+two minutes. Grid phase metrics require a connected grid sensor independently
+of the inverter's phase count. Scrapes never trigger additional Modbus traffic.
+
 ## Verification
 
 ```sh
@@ -279,7 +299,13 @@ connected. A retained `offline` last will covers crashes/lost connections; norma
 shutdown publishes `offline` before disconnecting. Entity availability also
 requires a successful hardware poll that is no more than the configured polling
 delay plus 30 seconds old. Offline/stale state publishes null readings and
-controls. Numeric sensors additionally expire after 90 seconds without a state
+controls and `details`. While core hardware is fresh, `details` contains the same
+seven optional groups as `/api/status`, with each group's `value` set to null if
+it is unsupported, failed, older than its freshness limit, or (for daily totals)
+from a previous device-local day. Sample timestamps and diagnostic fields remain
+available. Grid phase power is null when the grid sensor is disconnected. Grid
+energy values remain exact decimal strings in 0.01 kWh units. `device_day` is
+included at the top level for interpreting daily samples. Numeric discovery sensors additionally expire after 90 seconds without a state
 message, as described in the [MQTT sensor documentation](https://www.home-assistant.io/integrations/sensor.mqtt/).
 
 Topics with the default prefix and `SIGEN_MQTT_ID=house_battery`:
@@ -287,7 +313,7 @@ Topics with the default prefix and `SIGEN_MQTT_ID=house_battery`:
 | Topic | Payload | Retained |
 | --- | --- | --- |
 | `homeassistant/device/house_battery/config` | Home Assistant device discovery JSON | yes |
-| `sigen/house_battery/state` | JSON with `online`, `last_success_unix`, `readings`, `controls`, `target`, `unit` | yes |
+| `sigen/house_battery/state` | JSON with `online`, `last_success_unix`, `readings`, `details`, `device_day`, `controls`, `alerts`, `target`, `unit` | yes |
 | `sigen/house_battery/availability` | `online` / `offline` | yes |
 | `sigen/house_battery/command/remote_ems` | `ON` / `OFF` | **never** |
 | `sigen/house_battery/command/ems_mode` | An exact option name from the discovery document | **never** |

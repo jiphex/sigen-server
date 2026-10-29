@@ -24,6 +24,18 @@ impl<T> Default for Sample<T> {
     }
 }
 impl<T> Sample<T> {
+    fn retain_current(&mut self, timestamp: u64, max_age: u64, day: Option<i64>, daily: bool) {
+        if self.unsupported
+            || self.last_error.is_some()
+            || !self
+                .updated_unix
+                .is_some_and(|t| timestamp.saturating_sub(t) <= max_age)
+            || (daily && (day.is_none() || self.device_day != day))
+        {
+            self.value = None;
+        }
+    }
+
     fn record(&mut self, result: sigen_modbus::Result<T>, day: Option<i64>) -> bool {
         match result {
             Ok(value) => {
@@ -74,6 +86,39 @@ pub struct Details {
     pub grid_export: Sample<String>,
     pub electrical: Sample<Electrical>,
     pub grid_phases: Sample<PhasePower>,
+}
+
+impl Details {
+    /// Current measurements for machine consumers; retain diagnostics for missing values.
+    /// Callers must also gate on core hardware freshness.
+    pub fn for_export(&self, timestamp: u64, day: Option<i64>, grid_connected: bool) -> Self {
+        let mut details = self.clone();
+        details
+            .pv_daily_kwh
+            .retain_current(timestamp, 600, day, true);
+        details
+            .load_daily_kwh
+            .retain_current(timestamp, 600, day, true);
+        details
+            .battery_daily
+            .retain_current(timestamp, 600, day, true);
+        details
+            .grid_import
+            .retain_current(timestamp, 600, day, false);
+        details
+            .grid_export
+            .retain_current(timestamp, 600, day, false);
+        details
+            .electrical
+            .retain_current(timestamp, 120, day, false);
+        details
+            .grid_phases
+            .retain_current(timestamp, 120, day, false);
+        if !grid_connected {
+            details.grid_phases.value = None;
+        }
+        details
+    }
 }
 
 pub struct Poller {
@@ -205,6 +250,50 @@ impl Poller {
 }
 
 #[cfg(test)]
+pub(crate) fn test_details(timestamp: u64, day: i64) -> Details {
+    fn sample<T>(value: T, timestamp: u64, day: i64) -> Sample<T> {
+        Sample {
+            value: Some(value),
+            updated_unix: Some(timestamp),
+            device_day: Some(day),
+            last_error: None,
+            unsupported: false,
+        }
+    }
+    Details {
+        pv_daily_kwh: sample(14.82, timestamp, day),
+        load_daily_kwh: sample(11.37, timestamp, day),
+        battery_daily: sample(
+            DailyBattery {
+                charge_kwh: 6.24,
+                discharge_kwh: 4.18,
+            },
+            timestamp,
+            day,
+        ),
+        grid_import: sample(u64::MAX.to_string(), timestamp, day),
+        grid_export: sample("0".into(), timestamp, day),
+        electrical: sample(
+            Electrical {
+                output_type: 2,
+                phase_voltage_volts: [230.0, 231.0, 232.0],
+                phase_current_amps: [-1.0, 2.0, 3.0],
+                power_factor: 0.999,
+            },
+            timestamp,
+            day,
+        ),
+        grid_phases: sample(
+            PhasePower {
+                active_watts: [-1000.0, 2000.0, 3000.0],
+            },
+            timestamp,
+            day,
+        ),
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::Status;
@@ -214,6 +303,50 @@ mod tests {
         sync::{Arc, RwLock},
         thread,
     };
+
+    #[test]
+    fn exports_filter_samples_independently_and_preserve_diagnostics_and_cache() {
+        let details = test_details(1000, 20000);
+        let current = details.for_export(1120, Some(20000), true);
+        assert_eq!(
+            current.grid_phases.value.unwrap().active_watts,
+            [-1000.0, 2000.0, 3000.0]
+        );
+        assert!(current.electrical.value.is_some());
+        let expired = details.for_export(1121, Some(20000), true);
+        assert!(expired.grid_phases.value.is_none());
+        assert!(expired.electrical.value.is_none());
+        assert!(expired.pv_daily_kwh.value.is_some());
+        let midnight = details.for_export(1120, Some(20001), false);
+        assert!(midnight.pv_daily_kwh.value.is_none());
+        assert!(midnight.load_daily_kwh.value.is_none());
+        assert!(midnight.battery_daily.value.is_none());
+        assert!(midnight.grid_phases.value.is_none());
+        assert!(midnight.grid_import.value.is_some());
+        assert_eq!(midnight.pv_daily_kwh.updated_unix, Some(1000));
+        assert!(details.pv_daily_kwh.value.is_some());
+        assert!(
+            details
+                .for_export(1600, Some(20000), true)
+                .grid_import
+                .value
+                .is_some()
+        );
+        assert!(
+            details
+                .for_export(1601, Some(20000), true)
+                .grid_import
+                .value
+                .is_none()
+        );
+        assert!(
+            details
+                .for_export(1000, None, true)
+                .pv_daily_kwh
+                .value
+                .is_none()
+        );
+    }
 
     fn shared() -> SharedStatus {
         let mut status = Status::new("127.0.0.1:502".into(), 1);

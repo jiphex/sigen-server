@@ -125,7 +125,7 @@ test('demo Prometheus output matches live exporter metadata and contains finite 
   }
   for (const line of output.trim().split('\n')) {
     if (line.startsWith('#')) continue;
-    assert.match(line, /^sigen_\w+(?:\{(?:alert|group)="[\w]+"\})? -?\d+(?:\.\d+)?$/);
+    assert.match(line, /^sigen_\w+(?:\{(?:alert|group|phase)="[\w]+"\})? -?\d+(?:\.\d+)?$/);
   }
   assert.ok(output.endsWith('\n'));
 });
@@ -338,4 +338,25 @@ test('electrical UI respects wiring and distinguishes inverter measurements from
   assert.equal(ui.nodes['phase-a-voltage'].textContent, '—');
   assert.equal(ui.nodes['power-factor'].textContent, '—');
   assert.match(ui.nodes['electrical-status'].textContent, /Unavailable/);
+});
+
+test('demo metrics include optional groups and omit expired or previous-day measurements', () => {
+  const context = vm.createContext({});
+  vm.runInContext(demoSource, context);
+  const s = context.createDemo().snapshot();
+  s.details.grid_import.value = '18446744073709551615';
+  let out = context.renderDemoMetrics(s);
+  assert.match(out, /sigen_grid_import_energy_kwh_total 184467440737095516\.15\n/);
+  assert.match(out, /sigen_pv_daily_energy_kwh 14\.82\n/);
+  assert.match(out, /sigen_grid_phase_power_watts\{phase="a"\} -/);
+  s.details.electrical.updated_unix -= 121;
+  s.details.grid_phases.last_error = 'failed';
+  s.device_day++;
+  out = context.renderDemoMetrics(s);
+  assert.doesNotMatch(out, /sigen_inverter_phase_voltage_volts/);
+  assert.doesNotMatch(out, /sigen_grid_phase_power_watts/);
+  assert.doesNotMatch(out, /sigen_pv_daily_energy_kwh/);
+  assert.match(out, /sigen_grid_import_energy_kwh_total/);
+  s.online = false;
+  assert.doesNotMatch(context.renderDemoMetrics(s), /sigen_grid_import_energy_kwh_total/);
 });

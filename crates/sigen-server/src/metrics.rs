@@ -92,6 +92,7 @@ pub fn render(s: &Status) -> String {
     }
     // Omit stale hardware values on failure rather than making them appear current.
     if s.fresh() {
+        optional_metrics(&mut out, s);
         if let Some(r) = &s.readings {
             macro_rules! gauge {
                 ($field:ident, $help:literal) => {
@@ -205,6 +206,121 @@ pub fn render(s: &Status) -> String {
     }
     out
 }
+
+fn optional_metrics(out: &mut String, s: &Status) {
+    let d = s.details.for_export(
+        now(),
+        s.device_day,
+        s.readings.as_ref().is_some_and(|r| r.grid_sensor_connected),
+    );
+    for (sample, name, help) in [
+        (
+            &d.pv_daily_kwh,
+            "sigen_pv_daily_energy_kwh",
+            "Inverter solar generation for the device-local day.",
+        ),
+        (
+            &d.load_daily_kwh,
+            "sigen_load_daily_energy_kwh",
+            "Plant load consumption for the device-local day.",
+        ),
+    ] {
+        if let Some(value) = sample.value {
+            metric(out, name, help, "gauge", value);
+        }
+    }
+    if let Some(b) = d.battery_daily.value {
+        metric(
+            out,
+            "sigen_battery_daily_charge_energy_kwh",
+            "Inverter battery charging energy for the device-local day.",
+            "gauge",
+            b.charge_kwh,
+        );
+        metric(
+            out,
+            "sigen_battery_daily_discharge_energy_kwh",
+            "Inverter battery discharging energy for the device-local day.",
+            "gauge",
+            b.discharge_kwh,
+        );
+    }
+    for (sample, name, help) in [
+        (
+            &d.grid_import,
+            "sigen_grid_import_energy_kwh_total",
+            "Plant imported grid energy since the new statistics interface was initialized.",
+        ),
+        (
+            &d.grid_export,
+            "sigen_grid_export_energy_kwh_total",
+            "Plant exported grid energy since the new statistics interface was initialized.",
+        ),
+    ] {
+        if let Some(value) = sample.value.as_ref().and_then(|s| s.parse::<u64>().ok()) {
+            metric(
+                out,
+                name,
+                help,
+                "counter",
+                format!("{}.{:02}", value / 100, value % 100),
+            );
+        }
+    }
+    if let Some(e) = d.electrical.value {
+        metric(
+            out,
+            "sigen_inverter_output_type",
+            "Raw inverter output wiring type.",
+            "gauge",
+            e.output_type,
+        );
+        metric(
+            out,
+            "sigen_inverter_power_factor",
+            "Inverter power factor.",
+            "gauge",
+            e.power_factor,
+        );
+        phases(
+            out,
+            "sigen_inverter_phase_voltage_volts",
+            "Inverter phase voltage where wiring defines a phase-neutral measurement.",
+            e.phase_voltage_volts,
+            std::array::from_fn(|i| e.output_type == 2 || (e.output_type == 0 && i == 0)),
+        );
+        phases(
+            out,
+            "sigen_inverter_phase_current_amps",
+            "Inverter phase current.",
+            e.phase_current_amps,
+            std::array::from_fn(|i| {
+                matches!(e.output_type, 1 | 2) || (e.output_type == 0 && i == 0)
+            }),
+        );
+    }
+    if let Some(p) = d.grid_phases.value {
+        phases(
+            out,
+            "sigen_grid_phase_power_watts",
+            "Plant grid sensor phase power: positive import, negative export.",
+            p.active_watts,
+            [true; 3],
+        );
+    }
+}
+
+fn phases(out: &mut String, name: &str, help: &str, values: [f64; 3], valid: [bool; 3]) {
+    if !valid.iter().any(|v| *v) {
+        return;
+    }
+    writeln!(out, "# HELP {name} {help}\n# TYPE {name} gauge").unwrap();
+    for ((phase, value), valid) in ["a", "b", "c"].into_iter().zip(values).zip(valid) {
+        if valid {
+            writeln!(out, "{name}{{phase=\"{phase}\"}} {value}").unwrap();
+        }
+    }
+}
 fn metric(out: &mut String, name: &str, help: &str, kind: &str, value: impl std::fmt::Display) {
     writeln!(
         out,
@@ -230,5 +346,66 @@ mod tests {
         assert!(output.contains("sigen_sample_age_seconds "));
         assert!(!output.contains("sigen_pv_power_watts"));
         assert!(output.ends_with('\n'));
+    }
+}
+
+#[cfg(test)]
+mod optional_tests {
+    use super::*;
+    fn status() -> Status {
+        let mut s = Status::new("127.0.0.1:502".into(), 1);
+        s.online = true;
+        s.control_valid_until =
+            Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
+        s.device_day = Some(20000);
+        s.details = crate::telemetry::test_details(now(), 20000);
+        s
+    }
+    #[test]
+    fn optional_metrics_use_energy_units_types_precision_and_phase_labels() {
+        let mut s = status();
+        let out = render(&s);
+        assert!(
+            out.contains(
+                "# TYPE sigen_pv_daily_energy_kwh gauge\nsigen_pv_daily_energy_kwh 14.82\n"
+            )
+        );
+        assert!(out.contains("sigen_load_daily_energy_kwh 11.37\n"));
+        assert!(out.contains("sigen_battery_daily_charge_energy_kwh 6.24\n"));
+        assert!(out.contains("sigen_battery_daily_discharge_energy_kwh 4.18\n"));
+        assert!(out.contains("# TYPE sigen_grid_import_energy_kwh_total counter\nsigen_grid_import_energy_kwh_total 184467440737095516.15\n"));
+        assert!(out.contains("sigen_grid_export_energy_kwh_total 0.00\n"));
+        assert!(out.contains("sigen_inverter_phase_voltage_volts{phase=\"c\"} 232\n"));
+        assert!(out.contains("sigen_inverter_phase_current_amps{phase=\"a\"} -1\n"));
+        assert!(out.contains("sigen_inverter_power_factor 0.999\n"));
+        // Without a connected grid sensor, plant phase powers are not exported.
+        assert!(!out.contains("sigen_grid_phase_power_watts"));
+        s.details.electrical.value.as_mut().unwrap().output_type = 0;
+        let out = render(&s);
+        assert!(out.contains("sigen_inverter_phase_voltage_volts{phase=\"a\"}"));
+        assert!(!out.contains("sigen_inverter_phase_voltage_volts{phase=\"b\"}"));
+        assert!(!out.contains("sigen_inverter_phase_current_amps{phase=\"c\"}"));
+    }
+    #[test]
+    fn optional_metrics_omit_expired_failed_unsupported_previous_day_and_offline_samples() {
+        let mut s = status();
+        s.details.pv_daily_kwh.updated_unix = Some(now() - 601);
+        s.details.load_daily_kwh.device_day = Some(19999);
+        s.details.battery_daily.last_error = Some("failed".into());
+        s.details.grid_import.unsupported = true;
+        s.details.electrical.updated_unix = Some(now() - 121);
+        let out = render(&s);
+        for name in [
+            "sigen_pv_daily_energy_kwh",
+            "sigen_load_daily_energy_kwh",
+            "sigen_battery_daily_charge_energy_kwh",
+            "sigen_grid_import_energy_kwh_total",
+            "sigen_inverter_power_factor",
+        ] {
+            assert!(!out.contains(name), "{name}");
+        }
+        assert!(out.contains("sigen_grid_export_energy_kwh_total 0.00\n"));
+        s.online = false;
+        assert!(!render(&s).contains("sigen_grid_export_energy_kwh_total"));
     }
 }

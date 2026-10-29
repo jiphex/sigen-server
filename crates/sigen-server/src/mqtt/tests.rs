@@ -26,6 +26,8 @@ fn status() -> Status {
     s.online = true;
     s.control_valid_until = Some(std::time::Instant::now() + Duration::from_secs(45));
     s.last_success_unix = Some(hardware::now());
+    s.device_day = Some(20000);
+    s.details = crate::telemetry::test_details(hardware::now(), 20000);
     s.controls = Some(Controls {
         remote_ems_enabled: true,
         remote_ems_mode: 2,
@@ -150,11 +152,53 @@ fn stale_and_offline_snapshots_do_not_publish_measurements_or_controls() {
     assert_eq!(payload["online"], false);
     assert!(payload["controls"].is_null());
     assert!(payload["readings"].is_null());
+    assert!(payload["details"].is_null());
     s.last_success_unix = None;
     assert!(!fresh(&c, &s));
     s.last_success_unix = Some(hardware::now());
     s.online = false;
     assert!(!fresh(&c, &s));
+    assert!(snapshot_payload(&c, &s)["details"].is_null());
+}
+
+#[test]
+fn mqtt_includes_optional_groups_with_independent_freshness_and_exact_counters() {
+    let c = config(false);
+    let mut s = status();
+    let payload = snapshot_payload(&c, &s);
+    assert_eq!(payload["device_day"], 20000);
+    assert_eq!(payload["details"]["pv_daily_kwh"]["value"], 14.82);
+    assert_eq!(
+        payload["details"]["battery_daily"]["value"]["charge_kwh"],
+        6.24
+    );
+    assert_eq!(
+        payload["details"]["grid_import"]["value"],
+        "18446744073709551615"
+    );
+    assert_eq!(
+        payload["details"]["electrical"]["value"]["phase_current_amps"][0],
+        -1.0
+    );
+    s.details.electrical.updated_unix = Some(hardware::now() - 121);
+    s.details.load_daily_kwh.device_day = Some(19999);
+    s.details.pv_daily_kwh.unsupported = true;
+    s.details.battery_daily.last_error = Some("read failed".into());
+    let payload = snapshot_payload(&c, &s);
+    for name in [
+        "electrical",
+        "load_daily_kwh",
+        "pv_daily_kwh",
+        "battery_daily",
+        "grid_phases",
+    ] {
+        assert!(payload["details"][name]["value"].is_null(), "{name}");
+    }
+    assert_eq!(payload["details"]["pv_daily_kwh"]["unsupported"], true);
+    assert!(payload["details"]["electrical"]["updated_unix"].is_number());
+    assert_eq!(payload["details"]["grid_export"]["value"], "0");
+    // Filtering publications must not erase the dashboard's last-known readings.
+    assert!(s.details.electrical.value.is_some());
 }
 
 struct Broker {
@@ -266,6 +310,11 @@ async fn broker_receives_retained_discovery_state_birth_republication_and_clean_
     assert!(state.retain);
     let state: Value = serde_json::from_slice(&state.payload).unwrap();
     assert_eq!(state["online"], true);
+    assert_eq!(state["details"]["load_daily_kwh"]["value"], 11.37);
+    assert_eq!(
+        state["details"]["grid_import"]["value"],
+        "18446744073709551615"
+    );
     assert_eq!(
         broker
             .topic("sigen/test_sigen/availability")

@@ -120,7 +120,7 @@ function createDemo() {
 function renderDemoMetrics(status) {
   const lines = ['# DEMO MODE: these metrics contain simulated data. The live /metrics endpoint is unchanged.'];
   function metric(name, help, type, value) {
-    lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} ${type}`, `${name} ${Number(value)}`);
+    lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} ${type}`, `${name} ${typeof value === 'boolean' ? Number(value) : value}`);
   }
   for (const [field, help] of [
     ['enabled', 'Whether an alert is enabled.'],
@@ -138,6 +138,46 @@ function renderDemoMetrics(status) {
   metric('sigen_sample_age_seconds', 'Age of the last successful poll.', 'gauge', Math.max(0, Math.floor(Date.now() / 1000) - status.last_success_unix));
   // Match the live exporter: stale readings and controls are omitted.
   if (status.online) {
+    const d = status.details || {};
+    const now = Math.floor(Date.now() / 1000);
+    const current = (sample, daily = false, age = 600) => sample && !sample.unsupported && !sample.last_error && sample.updated_unix != null
+      && Math.max(0, now - sample.updated_unix) <= age && (!daily || (status.device_day != null && sample.device_day === status.device_day)) ? sample.value : null;
+    for (const [name, sample, help] of [
+      ['sigen_pv_daily_energy_kwh', d.pv_daily_kwh, 'Inverter solar generation for the device-local day.'],
+      ['sigen_load_daily_energy_kwh', d.load_daily_kwh, 'Plant load consumption for the device-local day.']
+    ]) {
+      const value = current(sample, true);
+      if (value != null) metric(name, help, 'gauge', value);
+    }
+    const b = current(d.battery_daily, true);
+    if (b) {
+      metric('sigen_battery_daily_charge_energy_kwh', 'Inverter battery charging energy for the device-local day.', 'gauge', b.charge_kwh);
+      metric('sigen_battery_daily_discharge_energy_kwh', 'Inverter battery discharging energy for the device-local day.', 'gauge', b.discharge_kwh);
+    }
+    for (const [name, sample, help] of [
+      ['sigen_grid_import_energy_kwh_total', d.grid_import, 'Plant imported grid energy since the new statistics interface was initialized.'],
+      ['sigen_grid_export_energy_kwh_total', d.grid_export, 'Plant exported grid energy since the new statistics interface was initialized.']
+    ]) {
+      const value = current(sample);
+      if (value != null && /^\d+$/.test(value)) {
+        const exact = BigInt(value);
+        metric(name, help, 'counter', `${exact / 100n}.${String(exact % 100n).padStart(2, '0')}`);
+      }
+    }
+    const phases = (name, help, values, valid) => {
+      if (!valid.some(Boolean)) return;
+      lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} gauge`);
+      ['a', 'b', 'c'].forEach((phase, i) => { if (valid[i]) lines.push(`${name}{phase="${phase}"} ${values[i]}`); });
+    };
+    const e = current(d.electrical, false, 120);
+    if (e) {
+      metric('sigen_inverter_output_type', 'Raw inverter output wiring type.', 'gauge', e.output_type);
+      metric('sigen_inverter_power_factor', 'Inverter power factor.', 'gauge', e.power_factor);
+      phases('sigen_inverter_phase_voltage_volts', 'Inverter phase voltage where wiring defines a phase-neutral measurement.', e.phase_voltage_volts, [0, 1, 2].map(i => e.output_type === 2 || (e.output_type === 0 && i === 0)));
+      phases('sigen_inverter_phase_current_amps', 'Inverter phase current.', e.phase_current_amps, [0, 1, 2].map(i => [1, 2].includes(e.output_type) || (e.output_type === 0 && i === 0)));
+    }
+    const p = current(d.grid_phases, false, 120);
+    if (p && status.readings.grid_sensor_connected) phases('sigen_grid_phase_power_watts', 'Plant grid sensor phase power: positive import, negative export.', p.active_watts, [true, true, true]);
     for (const [field, help] of [
       ['grid_power_watts', 'Grid power: positive import, negative export.'],
       ['plant_power_watts', 'Plant active power.'],
