@@ -2,7 +2,7 @@
 
 Blocking Rust client for Sigenergy Modbus TCP, based on
 [Sigenergy Modbus Protocol V2.7, released 2025-05-23](https://www.sigenergy.com/uploads/us_download/1755488219226583.pdf).
-Register addresses, types and gains come from sections 5.1–5.4; framing and
+Register addresses, types and gains come from sections 5.1–5.5; framing and
 exceptions from section 6. Multiword values use the most significant word first,
 consistent with the document's examples. This is a subset of V2.7, not a claim
 of support for every model or register in the document.
@@ -38,6 +38,56 @@ Supported typed operations:
 - Explicit remote EMS enable/mode and backup SOC writes (40029, 40031, 40046).
   Enabling remote EMS changes plant operating mode; mode selection and limits
   have the preconditions described in section 5.2. No writes occur during reads.
+
+Optional register groups are available through separate read methods. Existing
+core reads keep their original request ranges; call these methods explicitly
+when the connected model and firmware support them.
+
+| Method | Registers | Notes |
+| --- | --- | --- |
+| `read_plant_phase_power` | 30015–30026 | A/B/C active and reactive power |
+| `read_grid_phase_power` | 30052–30063 | Grid sensor A/B/C active and reactive power |
+| `read_plant_alarms` | 30027–30030, 30072 | Five aggregated alarm words, without reading reserved registers |
+| `read_plant_capabilities` | 30010–30013, 30039–30050 | Rated and currently available power; includes hybrid-only ESS capabilities |
+| `read_plant_battery` | 30064–30071, 30083–30087 | Available energy, ratings, cutoff SOC and weighted SOH; hybrid only |
+| `read_plant_energy` | Named `PlantEnergyCounter` addresses | Exact U64 counters for PV, loads, grid, ESS, chargers, third-party inverter and generator |
+| `read_daily_load_energy` | 30092–30093 | Exact U32 daily consumption |
+| `read_third_party_power_kw` | 30194–30195 | Signed third-party inverter power |
+| `read_smart_load` | 30098–30145, 30146–30193 | Select one load numbered 1–24; reads its energy and power only |
+| `read_battery_ratings` | 30546–30553 | Inverter absorption and battery ratings; hybrid only |
+| `read_battery_energy` | 30566–30577 | Exact daily U32 and accumulated U64 charge/discharge counters; hybrid only |
+| `read_pv_energy` | 31509–31512 | Exact daily and total generation; **both U32** |
+| `read_electrical` | 31000–31023 | Grid ratings, frequency, temperature, output type, line/phase voltages, phase currents and power factor |
+| `read_pv_string` | 31027–31034, 31042–31047, 31052–31065 | Select a documented string; signed voltage/current |
+| `read_inverter_diagnostics` | 31037–31041 | Insulation resistance and startup/shutdown timestamps |
+| `read_power_adjustment_feedback` | 30613–30619 | Signed active/reactive adjustment and power-factor feedback |
+| `read_dc_charger` | 31500–31508 | Vehicle voltage/SOC, current, signed power and session energy/duration; hybrid only |
+| `read_ac_charger` | 32000–32014 | EVAC state, energy, electrical ratings and three alarm words; charger slave ID |
+
+Energy structs and `read_plant_energy`/`read_daily_load_energy` retain exact
+integer values in **0.01 kWh** units. New-interface plant energy counters at
+30228–30268 reset to zero when firmware first adds that interface; they do not
+inherit historical totals. Legacy and new counters are named separately.
+
+```rust,no_run
+use sigen_modbus::{Client, PlantEnergyCounter, UnitId};
+let mut client = Client::connect("192.168.1.50:502".parse()?)?;
+let unit = UnitId::inverter(1)?;
+let grid = client.read_grid_phase_power()?;
+let battery_energy = client.read_battery_energy(unit)?;
+let imported = client.read_plant_energy(PlantEnergyCounter::NewGridImport)?;
+let pv = client.read_pv_string(unit, 1)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Phase availability depends on the reported output type and wiring; fields for
+absent phases are not interpreted as valid measurements. Check the model's PV
+count before requesting a string. V2.7 duplicates a PV8 current label and omits
+PV9 voltage at 31048–31051, so strings 8 and 9 are rejected rather than guessed;
+raw reads remain available. Strings 1–7 and 10–16 use explicit documented ranges,
+including the gap after string 4. AC charger IDs use `UnitId::inverter(id)` to
+construct a non-plant address in 1–246; the method name does not detect device type.
+No additional control writes or automatic polling are introduced by these helpers.
 
 `read_registers`, `write_register` (0x06) and `write_registers` (0x10) provide
 access to other documented registers. Addresses are sent literally: **30000

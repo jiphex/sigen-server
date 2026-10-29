@@ -1,5 +1,8 @@
 use crate::{Client, Error, Result, UnitId};
 
+mod extended;
+pub use extended::*;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunningState {
     Standby,

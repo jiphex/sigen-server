@@ -507,3 +507,351 @@ fn failed_audit_prevents_transmission() {
     ));
     worker.join().unwrap();
 }
+
+#[test]
+fn extended_plant_reads_use_plant_unit_and_skip_reserved_addresses() {
+    let (mut client, worker) = mock(|mut stream| {
+        registers(
+            &mut stream,
+            247,
+            30015,
+            &[
+                0xffff, 64536, 0, 2000, 0, 3000, 0, 4000, 0xffff, 60536, 0, 6000,
+            ],
+        );
+        registers(
+            &mut stream,
+            247,
+            30052,
+            &[0, 1000, 0, 2000, 0, 3000, 0, 4000, 0, 5000, 0, 6000],
+        );
+        registers(&mut stream, 247, 30027, &[1, 2, 4, 8]);
+        registers(&mut stream, 247, 30072, &[16]);
+        registers(&mut stream, 247, 30010, &[0, 12000, 0, 15000]);
+        registers(
+            &mut stream,
+            247,
+            30039,
+            &[0, 11000, 0, 10000, 0, 9000, 0, 8000, 0, 7000, 0, 6000],
+        );
+    });
+    let phases = client.read_plant_phase_power().unwrap();
+    assert_eq!(phases.active_kw, [-1.0, 2.0, 3.0]);
+    assert_eq!(phases.reactive_kvar, [4.0, -5.0, 6.0]);
+    let grid = client.read_grid_phase_power().unwrap();
+    assert_eq!(grid.active_kw, [1.0, 2.0, 3.0]);
+    assert_eq!(grid.reactive_kvar, [4.0, 5.0, 6.0]);
+    assert_eq!(client.read_plant_alarms().unwrap(), [1, 2, 4, 8, 16]);
+    assert_eq!(
+        client.read_plant_capabilities().unwrap(),
+        sigen_modbus::PlantCapabilities {
+            max_active_power_kw: 12.0,
+            max_apparent_power: 15.0,
+            available_export_power_kw: 11.0,
+            available_import_power_kw: 10.0,
+            available_reactive_export_kvar: 9.0,
+            available_reactive_import_kvar: 8.0,
+            available_charge_power_kw: 7.0,
+            available_discharge_power_kw: 6.0,
+        }
+    );
+    worker.join().unwrap();
+}
+
+#[test]
+fn extended_battery_reads_preserve_capacity_gains_and_exact_large_energy_totals() {
+    let (mut client, worker) = mock(|mut stream| {
+        registers(
+            &mut stream,
+            247,
+            30064,
+            &[0, 1234, 0, 5678, 0, 5000, 0, 6000],
+        );
+        registers(&mut stream, 247, 30083, &[0, 1600, 950, 100, 995]);
+        registers(
+            &mut stream,
+            2,
+            30546,
+            &[0, 10000, 0, 1600, 0, 5000, 0, 6000],
+        );
+        registers(
+            &mut stream,
+            2,
+            30566,
+            &[
+                0, 123, 0xffff, 0xffff, 0xffff, 0xfffe, 0, 456, 0x1234, 0x5678, 0x9abc, 0xdef0,
+            ],
+        );
+        registers(&mut stream, 2, 31509, &[0, 789, 0xffff, 0xfffe]);
+    });
+    assert_eq!(
+        client.read_plant_battery().unwrap(),
+        sigen_modbus::PlantBattery {
+            available_charge_energy_kwh: 12.34,
+            available_discharge_energy_kwh: 56.78,
+            rated_charge_power_kw: 5.0,
+            rated_discharge_power_kw: 6.0,
+            rated_energy_kwh: 16.0,
+            charge_cutoff_soc_percent: 95.0,
+            discharge_cutoff_soc_percent: 10.0,
+            soh_percent: 99.5,
+        }
+    );
+    let unit = UnitId::inverter(2).unwrap();
+    assert_eq!(
+        client.read_battery_ratings(unit).unwrap(),
+        sigen_modbus::BatteryRatings {
+            max_absorption_power_kw: 10.0,
+            rated_energy_kwh: 16.0,
+            rated_charge_power_kw: 5.0,
+            rated_discharge_power_kw: 6.0,
+        }
+    );
+    assert_eq!(
+        client.read_battery_energy(unit).unwrap(),
+        sigen_modbus::BatteryEnergy {
+            daily_charge: 123,
+            total_charge: u64::MAX - 1,
+            daily_discharge: 456,
+            total_discharge: 0x123456789abcdef0,
+        }
+    );
+    assert_eq!(
+        client.read_pv_energy(unit).unwrap(),
+        sigen_modbus::PvEnergy {
+            daily: 789,
+            total: u32::MAX - 1
+        }
+    );
+    worker.join().unwrap();
+}
+
+#[test]
+fn smart_load_boundaries_and_energy_interfaces_use_correct_widths() {
+    let (mut client, worker) = mock(|mut stream| {
+        registers(&mut stream, 247, 30098, &[0, 123]);
+        registers(&mut stream, 247, 30146, &[0xffff, 64536]);
+        registers(&mut stream, 247, 30144, &[0xffff, 0xfffe]);
+        registers(&mut stream, 247, 30192, &[0, 2000]);
+        registers(&mut stream, 247, 30092, &[1, 2]);
+        registers(&mut stream, 247, 30194, &[0xffff, 63536]);
+        registers(&mut stream, 247, 30268, &[0xffff, 0xffff, 0xffff, 0xffff]);
+    });
+    assert_eq!(
+        client.read_smart_load(1).unwrap(),
+        sigen_modbus::SmartLoad {
+            total_energy: 123,
+            power_kw: -1.0
+        }
+    );
+    assert_eq!(
+        client.read_smart_load(24).unwrap(),
+        sigen_modbus::SmartLoad {
+            total_energy: u32::MAX - 1,
+            power_kw: 2.0
+        }
+    );
+    assert_eq!(client.read_daily_load_energy().unwrap(), 65538);
+    assert_eq!(client.read_third_party_power_kw().unwrap(), -2.0);
+    assert_eq!(
+        client
+            .read_plant_energy(sigen_modbus::PlantEnergyCounter::NewGeneratorOutput)
+            .unwrap(),
+        u64::MAX
+    );
+    worker.join().unwrap();
+}
+
+#[test]
+fn electrical_diagnostics_and_feedback_keep_signed_values_and_phase_order() {
+    let (mut client, worker) = mock(|mut stream| {
+        registers(
+            &mut stream,
+            3,
+            31000,
+            &[
+                2300,
+                5000,
+                4999,
+                (-125_i16) as u16,
+                2,
+                0,
+                40001,
+                0,
+                40002,
+                0,
+                40003,
+                0,
+                23001,
+                0,
+                23002,
+                0,
+                23003,
+                0xffff,
+                65413,
+                0,
+                234,
+                0,
+                345,
+                999,
+            ],
+        );
+        registers(
+            &mut stream,
+            3,
+            31037,
+            &[1234, 0x1234, 0x5678, 0x9abc, 0xdef0],
+        );
+        registers(
+            &mut stream,
+            3,
+            30613,
+            &[
+                0xffff,
+                64302,
+                0,
+                2345,
+                (-1234_i16) as u16,
+                3456,
+                (-950_i16) as u16,
+            ],
+        );
+    });
+    let unit = UnitId::inverter(3).unwrap();
+    assert_eq!(
+        client.read_electrical(unit).unwrap(),
+        sigen_modbus::Electrical {
+            rated_grid_voltage_v: 230.0,
+            rated_grid_frequency_hz: 50.0,
+            grid_frequency_hz: 49.99,
+            internal_temperature_c: -12.5,
+            output_type: 2,
+            line_voltage_v: [400.01, 400.02, 400.03],
+            phase_voltage_v: [230.01, 230.02, 230.03],
+            phase_current_a: [-1.23, 2.34, 3.45],
+            power_factor: 0.999,
+        }
+    );
+    assert_eq!(
+        client.read_inverter_diagnostics(unit).unwrap(),
+        sigen_modbus::InverterDiagnostics {
+            insulation_resistance_megohms: 1.234,
+            startup_epoch_seconds: 0x12345678,
+            shutdown_epoch_seconds: 0x9abcdef0,
+        }
+    );
+    assert_eq!(
+        client.read_power_adjustment_feedback(unit).unwrap(),
+        sigen_modbus::PowerAdjustmentFeedback {
+            active_power_kw: -1.234,
+            reactive_power_kvar: 2.345,
+            active_power_percent: -12.34,
+            reactive_qs_percent: 34.56,
+            power_factor: -0.95,
+        }
+    );
+    worker.join().unwrap();
+}
+
+#[test]
+fn pv_strings_respect_discontiguous_ranges_and_signed_scaling() {
+    let (mut client, worker) = mock(|mut stream| {
+        for address in [31027, 31033, 31042, 31046, 31052, 31064] {
+            registers(&mut stream, 4, address, &[4321, (-123_i16) as u16]);
+        }
+    });
+    let unit = UnitId::inverter(4).unwrap();
+    for number in [1, 4, 5, 7, 10, 16] {
+        assert_eq!(
+            client.read_pv_string(unit, number).unwrap(),
+            sigen_modbus::PvString {
+                voltage_v: 432.1,
+                current_a: -1.23
+            }
+        );
+    }
+    worker.join().unwrap();
+}
+
+#[test]
+fn charger_reads_use_correct_units_gains_and_alarm_groups() {
+    let (mut client, worker) = mock(|mut stream| {
+        registers(
+            &mut stream,
+            5,
+            31500,
+            &[4001, 123, 0xffff, 64302, 567, 0, 890, 1, 2],
+        );
+        registers(
+            &mut stream,
+            6,
+            32000,
+            &[
+                42, 1, 2, 0xffff, 63536, 0, 22000, 0, 3200, 2300, 0, 4000, 1, 2, 4,
+            ],
+        );
+    });
+    assert_eq!(
+        client
+            .read_dc_charger(UnitId::inverter(5).unwrap())
+            .unwrap(),
+        sigen_modbus::DcCharger {
+            battery_voltage_v: 400.1,
+            current_a: 12.3,
+            output_power_kw: -1.234,
+            vehicle_soc_percent: 56.7,
+            session_energy_kwh: 8.9,
+            session_duration_seconds: 65538,
+        }
+    );
+    assert_eq!(
+        client
+            .read_ac_charger(UnitId::inverter(6).unwrap())
+            .unwrap(),
+        sigen_modbus::AcCharger {
+            state: 42,
+            total_energy_kwh: 655.38,
+            power_kw: -2.0,
+            rated_power_kw: 22.0,
+            rated_current_a: 32.0,
+            rated_voltage_v: 230.0,
+            breaker_rated_current_a: 40.0,
+            alarms: [1, 2, 4],
+        }
+    );
+    worker.join().unwrap();
+}
+
+#[test]
+fn invalid_optional_read_arguments_send_no_requests() {
+    let (mut client, worker) = mock(|mut stream| {
+        registers(&mut stream, 247, 30092, &[0, 1]);
+    });
+    for number in [0, 25, 255] {
+        assert!(matches!(
+            client.read_smart_load(number),
+            Err(Error::InvalidArgument(_))
+        ));
+    }
+    for number in [0, 8, 9, 17, 255] {
+        assert!(matches!(
+            client.read_pv_string(UnitId::inverter(1).unwrap(), number),
+            Err(Error::InvalidArgument(_))
+        ));
+    }
+    assert!(client.read_battery_ratings(UnitId::PLANT).is_err());
+    assert!(client.read_battery_energy(UnitId::PLANT).is_err());
+    assert!(client.read_pv_energy(UnitId::PLANT).is_err());
+    assert!(client.read_electrical(UnitId::PLANT).is_err());
+    assert!(client.read_pv_string(UnitId::PLANT, 1).is_err());
+    assert!(client.read_inverter_diagnostics(UnitId::PLANT).is_err());
+    assert!(
+        client
+            .read_power_adjustment_feedback(UnitId::PLANT)
+            .is_err()
+    );
+    assert!(client.read_dc_charger(UnitId::PLANT).is_err());
+    assert!(client.read_ac_charger(UnitId::PLANT).is_err());
+    assert_eq!(client.read_daily_load_energy().unwrap(), 1);
+    worker.join().unwrap();
+}
