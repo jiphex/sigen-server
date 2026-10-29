@@ -24,6 +24,9 @@ pub struct Status {
     pub control_errors: u64,
     pub device: Option<Device>,
     pub readings: Option<Readings>,
+    pub details: crate::telemetry::Details,
+    /// Local device day (days since Unix epoch), for daily counter rollover.
+    pub device_day: Option<i64>,
     pub controls: Option<Controls>,
 }
 impl Status {
@@ -46,6 +49,8 @@ impl Status {
             control_errors: 0,
             device: None,
             readings: None,
+            details: crate::telemetry::Details::default(),
+            device_day: None,
             controls: None,
         }
     }

@@ -11,10 +11,12 @@ function createDemo() {
   const enabled = Object.fromEntries(Object.keys(names).map(id => [id, true]));
   let lastSuccess = Math.floor(Date.now() / 1000);
   let lastReadings = null;
+  let lastDetails = null;
   let pollErrors = 0;
   const since = {};
   function snapshot() {
     const now = Math.floor(Date.now() / 1000);
+    const deviceDay = Math.floor((now - new Date().getTimezoneOffset() * 60) / 86400);
     const online = scenario !== 'offline';
     if (online) lastSuccess = now;
     else pollErrors++;
@@ -32,6 +34,7 @@ function createDemo() {
       battery_alarm: fault, grid_disconnected: false, control_failed: false};
     const status = {
       online, last_success_unix: lastSuccess,
+      device_day: deviceDay,
       poll_errors: pollErrors, control_errors: 0,
       last_error: online ? null : 'Demo: the simulated Modbus connection has timed out.',
       device: {model: 'SigenStor · DEMO', serial_number: 'DEMO-0001', firmware_version: 'Simulated'},
@@ -65,6 +68,18 @@ function createDemo() {
       })},
       pushover: null, mqtt: null
     };
+    if (online) {
+      const sample = value => ({value, updated_unix: now, device_day: deviceDay, last_error: null, unsupported: false});
+      lastDetails = {
+        pv_daily_kwh: sample(scenario === 'night' ? 22.46 : 14.82),
+        load_daily_kwh: sample(11.37),
+        battery_daily: sample({charge_kwh: 6.24, discharge_kwh: 4.18}),
+        grid_import: sample('183456'), grid_export: sample('256789'),
+        electrical: sample({output_type: 2, phase_voltage_volts: [230.4, 231.1, 229.8], phase_current_amps: [4.2, 3.8, 4.5], power_factor: 0.998}),
+        grid_phases: sample({active_watts: [status.readings.grid_power_watts / 3 - 80, status.readings.grid_power_watts / 3 + 30, status.readings.grid_power_watts / 3 + 50]})
+      };
+    }
+    status.details = lastDetails;
     if (online) lastReadings = status.readings;
     else status.readings = lastReadings;
     return status;

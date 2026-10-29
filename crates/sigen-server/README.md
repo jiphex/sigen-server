@@ -32,6 +32,16 @@ SIGEN_ADDRESS=192.168.1.50:502 SIGEN_UNIT_ID=1 cargo run -p sigen-server
 
 Open **http://127.0.0.1:3000**. The dashboard shows solar/grid/battery/inverter
 power, battery charge and health, temperatures, grid frequency and alarm words.
+**Today’s energy** adds inverter solar generation, whole-plant load consumption,
+and this inverter’s battery charge/discharge totals. Each value has its own sample
+age and device-local date; previous-day samples are hidden after the device reports
+a new local day. **Grid energy counters** shows plant import/export totals using
+the new statistics interface, not daily consumption. These counters begin at zero
+when firmware first introduces that interface; they do not inherit earlier totals.
+**Electrical details** expands to show inverter phase voltages/currents, grid
+sensor phase power with import/export direction, output wiring and power factor.
+Absent or ambiguously defined phases are shown as — rather than interpreted as
+zero; grid phase power is unavailable when the grid sensor is disconnected.
 The dashboard automatically follows your system's light or dark appearance.
 Select **Pause updates** to stop automatic refreshes while you read the dashboard
 or inspect metrics. **Resume updates** refreshes the display and restarts polling.
@@ -74,6 +84,25 @@ Each poll takes about 12–13 seconds because Modbus requests must be spaced one
 second apart. The dashboard refreshes the cached state every three seconds.
 Scrapes and status requests don't trigger hardware traffic. The first complete
 reading appears after about 13 seconds. Polls are not atomic snapshots.
+
+Optional dashboard groups are read one request at a time during the gap between
+core polls. Energy groups refresh at most once every five minutes; electrical
+groups at most once every minute. They share the existing paced connection and
+only run when there is enough time before the next core poll for request pacing
+and a complete response. Very short `--poll-seconds` settings can leave no time
+for optional reads. Queued commands are checked before starting another optional
+read; an already-started read completes before a new command is processed.
+Unsupported groups (Modbus exceptions 1–3) are marked unavailable until restart
+without failing the core poll. Other device exceptions are retried on the next
+optional interval; transport/protocol failures invalidate controls and reconnect.
+An offline, failed or old optional sample is labeled **Last known**, independently
+of the core sample age. Daily energy older than ten minutes and electrical data
+older than two minutes use that label even while the core connection is healthy.
+The `/api/status` response exposes these groups in `details`, each with `value`,
+`updated_unix`, `device_day`, `last_error` and `unsupported`. Grid counters are
+exact decimal strings in 0.01 kWh units to preserve U64 precision in browsers.
+These groups are currently dashboard/status data; MQTT discovery and Prometheus
+measurements retain their existing fields.
 
 A dedicated thread owns one paced Modbus connection. Polling and writes are
 serialized; HTTP stays responsive while hardware requests run. Disconnections

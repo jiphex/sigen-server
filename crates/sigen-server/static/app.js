@@ -27,6 +27,7 @@ function controls(c) {
 }
 function display(s) {
   latest = s;
+  showDetails(s);
   if (demo) $('demo-metrics-output').textContent = renderDemoMetrics(s);
   showAlerts(s.alerts);
   $('pushover-status').textContent = s.pushover ? `Pushover enabled · ${s.pushover.sent_total} sent${s.pushover.last_error ? ' · ' + s.pushover.last_error : ''}` : 'Pushover disabled';
@@ -75,7 +76,54 @@ async function refresh() {
     $('controls').disabled = true;
     document.body.classList.add('stale');
     showError('error', e.message);
+    if (latest) showDetails({...latest, online: false});
     if (latest?.readings) $('soc-bar').setAttribute('aria-valuetext', `${fmt(latest.readings.battery_soc_percent, '%')} (last known reading)`);
+  }
+}
+function sampleStatus(sample, s, daily = false, maxAge = 600) {
+  if (sample?.unsupported) return 'Unavailable on this device / firmware';
+  if (sample?.value == null) return sample?.last_error ? 'Read failed · retrying' : 'Waiting for data…';
+  if (daily && (sample.device_day == null || s.device_day == null || sample.device_day !== s.device_day)) return 'Waiting for today’s totals';
+  const age = Math.max(0, Math.floor(Date.now()/1000) - sample.updated_unix);
+  const date = daily ? ` · ${new Date(sample.device_day * 86400000).toISOString().slice(0, 10)}` : '';
+  return `${!s.online || sample.last_error || age > maxAge ? 'Last known' : 'Updated'} ${age}s ago${date}`;
+}
+function showDetails(s) {
+  const d = s.details || {};
+  for (const [id, sample, value, daily] of [
+    ['pv', d.pv_daily_kwh, d.pv_daily_kwh?.value, true],
+    ['load', d.load_daily_kwh, d.load_daily_kwh?.value, true],
+    ['charge', d.battery_daily, d.battery_daily?.value?.charge_kwh, true],
+    ['discharge', d.battery_daily, d.battery_daily?.value?.discharge_kwh, true],
+    ['import', d.grid_import, d.grid_import?.value, false],
+    ['export', d.grid_export, d.grid_export?.value, false]
+  ]) {
+    const valid = value != null && !sample.unsupported && (!daily || (sample.device_day != null && sample.device_day === s.device_day));
+    let text = '—';
+    if (valid && daily) text = fmt(value, 'kWh', 2);
+    if (valid && !daily && /^\d+$/.test(value)) {
+      const exact = BigInt(value);
+      text = `${exact / 100n}.${String(exact % 100n).padStart(2, '0')} kWh`;
+    }
+    setText(`energy-${id}`, text);
+    setText(`energy-${id}-status`, sampleStatus(sample, s, daily));
+  }
+  const e = d.electrical?.unsupported ? null : d.electrical?.value;
+  const p = d.grid_phases?.unsupported ? null : d.grid_phases?.value;
+  setText('electrical-status', sampleStatus(d.electrical, s, false, 120));
+  setText('grid-phases-status', s.readings?.grid_sensor_connected === false ? 'Grid sensor disconnected · phase power unavailable' : sampleStatus(d.grid_phases, s, false, 120));
+  const wiring = {0: 'L/N · single phase', 1: 'L1/L2/L3 · three wire', 2: 'L1/L2/L3/N · four wire', 3: 'L1/L2/N'};
+  setText('output-wiring', e ? wiring[e.output_type] ?? `Unknown (${e.output_type})` : '—');
+  setText('power-factor', e ? fmt(e.power_factor, '', 3).trim() : '—');
+  for (const [i, phase] of ['a', 'b', 'c'].entries()) {
+    // Only render phase/neutral voltage where wiring makes its meaning clear.
+    const voltageAvailable = e && (e.output_type === 2 || (e.output_type === 0 && i === 0));
+    const currentAvailable = e && ([1, 2].includes(e.output_type) || (e.output_type === 0 && i === 0));
+    setText(`phase-${phase}-voltage`, voltageAvailable ? fmt(e.phase_voltage_volts[i], 'V', 2) : '—');
+    setText(`phase-${phase}-current`, currentAvailable ? fmt(e.phase_current_amps[i], 'A', 2) : '—');
+    // The plant's grid sensor can cover more phases than this inverter's wiring.
+    const powerAvailable = p && s.readings?.grid_sensor_connected;
+    setText(`phase-${phase}-power`, powerAvailable ? `${fmt(Math.abs(p.active_watts[i])/1000, 'kW', 2)} ${p.active_watts[i] < 0 ? 'export' : 'import'}` : '—');
   }
 }
 async function send(command) {

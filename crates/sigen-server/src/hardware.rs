@@ -92,6 +92,7 @@ pub fn start(
         tracing::info!("Hardware worker started");
         let mut client = None;
         let mut next_poll = Instant::now();
+        let mut details = crate::telemetry::Poller::new();
         loop {
             if status.read().expect("status lock").shutting_down {
                 break;
@@ -190,7 +191,14 @@ pub fn start(
                             Duration::ZERO
                         };
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => (),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(connected) = client.as_mut()
+                        && details.poll_if_due(connected, unit, &config, next_poll, &status)
+                    {
+                        client = None;
+                        next_poll = Instant::now() + config.request_interval;
+                    }
+                }
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         }
@@ -232,6 +240,10 @@ fn poll(
             status.write().expect("status lock").device = Some(device.into());
         }
         let plant = client.read_plant()?;
+        status.write().expect("status lock").device_day = Some(
+            (i64::from(plant.epoch_seconds) + i64::from(plant.timezone_offset_minutes) * 60)
+                .div_euclid(86400),
+        );
         let inverter = client.read_inverter(unit)?;
         let battery = client.read_battery(unit)?;
         let controls = read_controls(client)?;

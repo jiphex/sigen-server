@@ -6,6 +6,7 @@ mod metrics;
 mod model;
 mod mqtt;
 mod pushover;
+mod telemetry;
 mod web;
 
 use clap::Parser;

@@ -21,6 +21,24 @@
 <article><h2>Inverter</h2><p class="value" id="inverter">—</p><small id="running">Waiting for status</small></article>
 </section>
 <section id="alerts-panel" class="panel" aria-labelledby="alerts-heading"><h2 id="alerts-heading" tabindex="-1">Alerts</h2><p id="alert-summary" role="status" aria-live="polite">Waiting for status…</p><div id="alerts"></div><p id="alert-error" class="failed" role="alert"></p></section>
+<section class="panel" aria-labelledby="energy-heading"><h2 id="energy-heading">Today’s energy</h2><p>Solar and battery figures are for this inverter. Load consumption is for the whole plant. Daily totals follow the device’s local day.</p>
+<div class="cards energy-cards">
+<article><h3>Solar generated</h3><p class="value" id="energy-pv">—</p><small id="energy-pv-status">Waiting for data…</small></article>
+<article><h3>Load consumed</h3><p class="value" id="energy-load">—</p><small id="energy-load-status">Waiting for data…</small></article>
+<article><h3>Battery charged</h3><p class="value" id="energy-charge">—</p><small id="energy-charge-status">Waiting for data…</small></article>
+<article><h3>Battery discharged</h3><p class="value" id="energy-discharge">—</p><small id="energy-discharge-status">Waiting for data…</small></article>
+</div>
+<details><summary>Grid energy counters</summary><p>Plant totals since these counters were initialized, not today’s usage. Firmware upgrades that introduce these counters start them from zero.</p>
+<dl class="detail-readings"><dt>Imported from grid</dt><dd><span id="energy-import">—</span><small id="energy-import-status">Waiting for data…</small></dd><dt>Exported to grid</dt><dd><span id="energy-export">—</span><small id="energy-export-status">Waiting for data…</small></dd></dl>
+</details></section>
+<details id="electrical-panel" class="panel"><summary>Electrical details</summary><p id="electrical-status">Waiting for data…</p><p>Voltages and currents are measured at the inverter; grid power comes from the plant’s grid sensor. Unavailable phases are shown as —.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Electrical phase readings"><table><caption class="sr-only">Phase readings</caption><thead><tr><th scope="col">Phase</th><th scope="col">Inverter voltage</th><th scope="col">Inverter current</th><th scope="col">Grid power</th></tr></thead><tbody>
+<tr><th scope="row">A / L1</th><td id="phase-a-voltage">—</td><td id="phase-a-current">—</td><td id="phase-a-power">—</td></tr>
+<tr><th scope="row">B / L2</th><td id="phase-b-voltage">—</td><td id="phase-b-current">—</td><td id="phase-b-power">—</td></tr>
+<tr><th scope="row">C / L3</th><td id="phase-c-voltage">—</td><td id="phase-c-current">—</td><td id="phase-c-power">—</td></tr>
+</tbody></table></div><p id="grid-phases-status">Waiting for grid phase data…</p>
+<dl class="detail-readings"><dt>Output wiring</dt><dd id="output-wiring">—</dd><dt>Power factor</dt><dd id="power-factor">—</dd></dl>
+</details>
 <section class="panel"><h2>System</h2><dl id="health"><dt>Battery temperature</dt><dd id="battery-temp">—</dd><dt>Battery health</dt><dd id="soh">—</dd><dt>Inverter temperature</dt><dd id="inverter-temp">—</dd><dt>Grid frequency</dt><dd id="frequency">—</dd><dt>Grid connection</dt><dd id="grid-state">—</dd><dt>Alarms (groups 1–5)</dt><dd id="alarms">—</dd><dt>EMS mode</dt><dd id="ems">—</dd></dl></section>
 <section class="panel"><h2>Plant controls</h2><p id="controls-help">These settings affect the whole plant, including other connected inverters. Enabling remote EMS selects standby first. Charge and discharge modes use the plant’s existing limits; PCS mode uses its existing dispatch settings.</p>
 <fieldset id="controls" disabled aria-describedby="controls-help control-result"><legend class="sr-only">Plant controls</legend>

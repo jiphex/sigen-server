@@ -208,3 +208,17 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12
   .alert-row.alert-row-active { border-inline-start: 5px solid Highlight; }
   :focus-visible { outline-color: Highlight; }
 }
+
+.energy-cards { margin-top: 16px; }
+.energy-cards h3 { color: var(--label); font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 12px; }
+.energy-cards small { overflow-wrap: anywhere; }
+.panel summary { min-height: 44px; padding: 10px 0; cursor: pointer; font-weight: 600; }
+.detail-readings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border: 1px solid var(--border); margin: 16px 0 0; }
+.detail-readings dt, .detail-readings dd { margin: 0; padding: 12px; border-bottom: 1px solid var(--divider); overflow-wrap: anywhere; }
+.detail-readings dd { font-family: var(--instrument-font); font-variant-numeric: tabular-nums; border-left: 1px solid var(--divider); }
+.detail-readings small { display: block; margin-top: 4px; font-family: system-ui, sans-serif; }
+.table-scroll { overflow-x: auto; }
+#electrical-panel table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#electrical-panel th, #electrical-panel td { padding: 12px 10px; text-align: left; border: 1px solid var(--border); }
+#electrical-panel th { background: var(--surface-alt); }
+#electrical-panel td { font-family: var(--instrument-font); white-space: nowrap; }

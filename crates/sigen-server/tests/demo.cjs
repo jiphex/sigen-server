@@ -292,3 +292,50 @@ test('pending alert saves retain keyboard focus and prevent additional toggle ch
   assert.equal(ui.document.activeElement, toggle);
   assert.equal(toggle.attributes['aria-disabled'], undefined);
 });
+
+test('energy UI preserves exact counters and distinguishes stale, missing and previous-day totals', () => {
+  const ui = dashboard('?demo=1', () => { throw new Error('Unexpected fetch'); });
+  assert.equal(ui.nodes['energy-pv'].textContent, '14.82 kWh');
+  assert.equal(ui.nodes['energy-load'].textContent, '11.37 kWh');
+  assert.equal(ui.nodes['energy-charge'].textContent, '6.24 kWh');
+  assert.equal(ui.nodes['energy-discharge'].textContent, '4.18 kWh');
+  vm.runInContext(`latest.details.grid_import.value = '18446744073709551615'; display(latest)`, ui.context);
+  assert.equal(ui.nodes['energy-import'].textContent, '184467440737095516.15 kWh');
+  vm.runInContext(`display({...latest, online: false})`, ui.context);
+  assert.match(ui.nodes['energy-pv-status'].textContent, /Last known/);
+  assert.match(ui.nodes['electrical-status'].textContent, /Last known/);
+  vm.runInContext(`display({...latest, device_day: latest.device_day + 1})`, ui.context);
+  assert.equal(ui.nodes['energy-pv'].textContent, '—');
+  assert.match(ui.nodes['energy-pv-status'].textContent, /Waiting for today/);
+  assert.equal(ui.nodes['energy-import'].textContent, '184467440737095516.15 kWh');
+  vm.runInContext(`latest.details.load_daily_kwh.unsupported = true; display(latest)`, ui.context);
+  assert.equal(ui.nodes['energy-load'].textContent, '—');
+  assert.match(ui.nodes['energy-load-status'].textContent, /Unavailable/);
+  vm.runInContext(`display({...latest, details: null})`, ui.context);
+  assert.equal(ui.nodes['energy-charge'].textContent, '—');
+  assert.match(ui.nodes['energy-charge-status'].textContent, /Waiting for data/);
+});
+
+test('electrical UI respects wiring and distinguishes inverter measurements from grid sensor power', () => {
+  const ui = dashboard('?demo=1', () => { throw new Error('Unexpected fetch'); });
+  assert.equal(ui.nodes['phase-b-voltage'].textContent, '231.10 V');
+  assert.equal(ui.nodes['phase-c-current'].textContent, '4.50 A');
+  assert.match(ui.nodes['phase-a-power'].textContent, /export/);
+  vm.runInContext(`latest.details.electrical.value.output_type = 0; display(latest)`, ui.context);
+  assert.equal(ui.nodes['phase-a-voltage'].textContent, '230.40 V');
+  for (const phase of ['b', 'c']) for (const field of ['voltage', 'current']) {
+    assert.equal(ui.nodes[`phase-${phase}-${field}`].textContent, '—');
+  }
+  assert.match(ui.nodes['phase-b-power'].textContent, /export/);
+  vm.runInContext(`latest.details.electrical.value.output_type = 42; display(latest)`, ui.context);
+  assert.match(ui.nodes['output-wiring'].textContent, /Unknown \(42\)/);
+  assert.equal(ui.nodes['phase-a-voltage'].textContent, '—');
+  vm.runInContext(`latest.details.electrical.value.output_type = 2; latest.readings.grid_sensor_connected = false; display(latest)`, ui.context);
+  assert.equal(ui.nodes['phase-a-power'].textContent, '—');
+  assert.equal(ui.nodes['phase-a-voltage'].textContent, '230.40 V');
+  assert.match(ui.nodes['grid-phases-status'].textContent, /sensor disconnected/);
+  vm.runInContext(`latest.details.electrical.unsupported = true; display(latest)`, ui.context);
+  assert.equal(ui.nodes['phase-a-voltage'].textContent, '—');
+  assert.equal(ui.nodes['power-factor'].textContent, '—');
+  assert.match(ui.nodes['electrical-status'].textContent, /Unavailable/);
+});
