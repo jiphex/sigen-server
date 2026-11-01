@@ -18,7 +18,7 @@
             version = (builtins.fromTOML (builtins.readFile ./crates/sigen-server/Cargo.toml)).package.version;
             src = pkgs.lib.fileset.toSource {
               root = ./.;
-              fileset = pkgs.lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./crates ];
+              fileset = pkgs.lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./LICENSE ./crates ];
             };
             cargoLock.lockFile = ./Cargo.lock;
             cargoBuildFlags = [ "--workspace" ];
@@ -28,6 +28,7 @@
             meta = {
               description = "Sigenergy dashboard, Prometheus exporter and Modbus simulator";
               mainProgram = "sigen-server";
+              license = pkgs.lib.licenses.bsd3;
               platforms = systems;
             };
           };

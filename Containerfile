@@ -3,6 +3,7 @@ FROM ${RUST_IMAGE} AS build
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
+COPY LICENSE ./LICENSE
 COPY crates/sigen-modbus ./crates/sigen-modbus
 COPY crates/sigen-server ./crates/sigen-server
 
@@ -17,6 +18,7 @@ RUN mkdir -p /out/data && chown 65532:65532 /out/data
 FROM scratch
 COPY --from=build /build/target/release/sigen-server /sigen-server
 COPY --from=build /build/target/release/sigen-journal /sigen-journal
+COPY --from=build /build/LICENSE /LICENSE
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build --chown=65532:65532 /out/data /data
 

@@ -7,6 +7,8 @@ for the library and simulator.
 
 See [release notes](CHANGELOG.md) for changes and upgrade notes.
 
+Licensed under the [BSD 3-Clause License](LICENSE).
+
 ## Nix
 
 With Nix flakes enabled, run these commands from the repository root:
