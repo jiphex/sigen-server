@@ -3,6 +3,11 @@ use sigen_modbus::{Battery, DeviceInfo, Inverter, Plant, RunningState};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
+    pub journal: Option<crate::journal::Journal>,
+    #[serde(skip)]
+    journal_connected: Option<bool>,
+    #[serde(skip)]
+    journal_outage_since: Option<std::time::Instant>,
     #[serde(skip)]
     pub write_audit: Option<std::sync::Arc<crate::audit::WriteAuditLog>>,
     #[serde(skip)]
@@ -32,6 +37,9 @@ pub struct Status {
 impl Status {
     pub fn new(target: String, unit: u8) -> Self {
         Self {
+            journal: None,
+            journal_connected: None,
+            journal_outage_since: None,
             write_audit: None,
             control_epoch: 0,
             control_valid_until: None,
@@ -57,6 +65,44 @@ impl Status {
 
     pub fn controls_ready(&self) -> bool {
         self.fresh() && self.controls.is_some()
+    }
+
+    /// Enqueue event metadata only; this never waits for journal disk I/O.
+    pub fn event(
+        &self,
+        category: crate::journal::Category,
+        kind: &str,
+        details: serde_json::Value,
+    ) {
+        if let Some(journal) = &self.journal {
+            journal.record(self, category, kind, details);
+        }
+    }
+
+    /// Record one event per observed connection transition, including initial failure.
+    /// Outage duration uses a monotonic clock and covers this process's observations.
+    pub fn connection_event(&mut self, connected: bool, error: Option<&str>) {
+        if self.journal_connected == Some(connected) {
+            return;
+        }
+        let duration = if connected {
+            self.journal_outage_since
+                .take()
+                .map(|since| since.elapsed().as_secs())
+        } else {
+            self.journal_outage_since = Some(std::time::Instant::now());
+            None
+        };
+        self.event(
+            crate::journal::Category::Connectivity,
+            if connected {
+                "hardware_connected"
+            } else {
+                "hardware_disconnected"
+            },
+            serde_json::json!({"error":error, "outage_seconds":duration}),
+        );
+        self.journal_connected = Some(connected);
     }
 
     /// Use a monotonic deadline so wall-clock adjustments cannot extend data validity.

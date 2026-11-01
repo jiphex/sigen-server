@@ -5,3 +5,7 @@
 
 /sigen-alerts.json
 /sigen-alerts.*.tmp
+
+**/sigen-events.sqlite3
+**/sigen-events.sqlite3-wal
+**/sigen-events.sqlite3-shm

@@ -39,6 +39,11 @@
 </tbody></table></div><p id="grid-phases-status">Waiting for grid phase data…</p>
 <dl class="detail-readings"><dt>Output wiring</dt><dd id="output-wiring">—</dd><dt>Power factor</dt><dd id="power-factor">—</dd></dl>
 </details>
+<details id="journal-panel" class="panel"><summary>Event journal</summary>
+<p>Connection changes, alerts, controls, and server events are kept across restarts. Newest events appear first. Refresh to see new events.</p>
+<div class="journal-toolbar"><label for="journal-category">Show</label><select id="journal-category"><option value="">All events</option><option value="connectivity">Connectivity</option><option value="alert">Alerts</option><option value="control">Controls</option><option value="settings">Settings</option><option value="server">Server</option></select><button id="journal-refresh" type="button">Newest events</button><button id="journal-older" type="button" disabled>Older events</button></div>
+<p id="journal-health" role="status">Waiting for journal status…</p><p id="journal-error" class="failed" role="alert"></p><p id="journal-page-status" role="status"></p><ol id="journal-events" aria-label="Event history"></ol>
+</details>
 <section class="panel"><h2>System</h2><dl id="health"><dt>Battery temperature</dt><dd id="battery-temp">—</dd><dt>Battery health</dt><dd id="soh">—</dd><dt>Inverter temperature</dt><dd id="inverter-temp">—</dd><dt>Grid frequency</dt><dd id="frequency">—</dd><dt>Grid connection</dt><dd id="grid-state">—</dd><dt>Alarms (groups 1–5)</dt><dd id="alarms">—</dd><dt>EMS mode</dt><dd id="ems">—</dd></dl></section>
 <section class="panel"><h2>Plant controls</h2><p id="controls-help">These settings affect the whole plant, including other connected inverters. Enabling remote EMS selects standby first. Charge and discharge modes use the plant’s existing limits; PCS mode uses its existing dispatch settings.</p>
 <fieldset id="controls" disabled aria-describedby="controls-help control-result"><legend class="sr-only">Plant controls</legend>

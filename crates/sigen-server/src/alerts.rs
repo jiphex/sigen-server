@@ -193,6 +193,11 @@ impl Alerts {
 /// Evaluate from cached readings only. Never clears hardware faults using stale data.
 /// Notify on activation, escalation, or confirmed recovery, rather than on every poll.
 pub fn refresh(status: &mut Status, now: u64) {
+    // Intentional shutdown is not a new hardware outage or alert transition.
+    if status.shutting_down {
+        return;
+    }
+    let mut transitions = Vec::new();
     let fresh = status.fresh()
         && status
             .last_success_unix
@@ -237,6 +242,15 @@ pub fn refresh(status: &mut Status, now: u64) {
         };
         let escalated = active && alert.active && next_severity > alert.severity;
         if active != alert.active || escalated {
+            // Disabling is an administrative clear, not evidence of hardware recovery.
+            transitions.push((
+                if !alert.enabled { "alert_disabled" } else if escalated { "alert_escalated" }
+                else if active { "alert_activated" } else { "alert_recovered" },
+                serde_json::json!({"alert":alert.id, "name":alert.name,"severity":if active { next_severity } else { alert.severity },
+                    "since_unix":if active && !alert.active { Some(now) } else { alert.since_unix },
+                    "duration_seconds":if !active { alert.since_unix.map(|t| now.saturating_sub(t)) } else { None },
+                    "alarms":r.map(|r| r.alarms)}),
+            ));
             if alert.enabled
                 && (active || alert.known)
                 && let Some(sender) = &status.alerts.notifications
@@ -276,12 +290,16 @@ pub fn refresh(status: &mut Status, now: u64) {
         alert.active = active;
         alert.severity = next_severity;
     }
+    for (kind, details) in transitions {
+        status.event(crate::journal::Category::Alert, kind, details);
+    }
 }
 
 /// Persist a toggle before applying it; a failed save leaves live settings intact.
 pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<Alerts> {
     let mut s = status.write().expect("status lock");
     let mut settings = s.alerts.settings.clone();
+    let changed = settings.enabled(id) != enabled;
     settings.set(id, enabled);
     // Persist before changing live settings, keeping concurrent edits serialized.
     s.alerts.save(&settings).inspect_err(|error| {
@@ -289,6 +307,13 @@ pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<A
     })?;
     tracing::info!(alert = id.key(), enabled, "Alert setting saved");
     s.alerts.settings = settings;
+    if changed {
+        s.event(
+            crate::journal::Category::Settings,
+            "alert_setting_changed",
+            serde_json::json!({"alert":id,"enabled":enabled}),
+        );
+    }
     refresh(&mut s, hardware::now());
     Ok(s.alerts.clone())
 }
@@ -351,6 +376,62 @@ mod tests {
     }
     fn alert(s: &Status, id: Id) -> &Alert {
         s.alerts.items.iter().find(|a| a.id == id).unwrap()
+    }
+
+    #[tokio::test]
+    async fn journal_records_transitions_once_and_does_not_call_disabling_recovery() {
+        let fixture = crate::journal::TestJournal::new();
+        let mut s = healthy();
+        s.journal = Some(fixture.journal.clone());
+        s.readings.as_mut().unwrap().alarms[2] = 1;
+        refresh(&mut s, 100);
+        refresh(&mut s, 101);
+        s.readings.as_mut().unwrap().alarms[2] = 1 << 6;
+        refresh(&mut s, 102);
+        // A stale observation cannot manufacture recovery or lower severity.
+        s.online = false;
+        refresh(&mut s, 103);
+        s.online = true;
+        s.readings.as_mut().unwrap().alarms[2] = 0;
+        refresh(&mut s, 104);
+        s.readings.as_mut().unwrap().alarms[2] = 1;
+        // set_enabled uses wall time, so keep this fixture fresh in both clocks.
+        s.last_success_unix = Some(hardware::now());
+        refresh(&mut s, hardware::now());
+        let shared = Arc::new(RwLock::new(s));
+        set_enabled(&shared, Id::BatteryAlarm, false).unwrap();
+        set_enabled(&shared, Id::BatteryAlarm, false).unwrap();
+        {
+            let mut s = shared.write().unwrap();
+            s.shutting_down = true;
+            s.online = false;
+            refresh(&mut s, hardware::now());
+        }
+        let page = fixture
+            .journal
+            .query(crate::journal::Query::default())
+            .await
+            .unwrap();
+        let battery: Vec<_> = page
+            .events
+            .iter()
+            .rev()
+            .filter(|e| e.details["alert"] == "battery_alarm")
+            .collect();
+        let kinds: Vec<_> = battery.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(
+            kinds,
+            [
+                "alert_activated",
+                "alert_escalated",
+                "alert_recovered",
+                "alert_activated",
+                "alert_setting_changed",
+                "alert_disabled"
+            ]
+        );
+        assert_eq!(battery[2].details["duration_seconds"], 4);
+        fixture.journal.shutdown().await.unwrap();
     }
     #[test]
     fn physical_hazards_are_critical_and_other_alarm_bits_are_high() {

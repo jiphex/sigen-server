@@ -219,6 +219,13 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12
 .detail-readings dd { font-family: var(--instrument-font); font-variant-numeric: tabular-nums; border-left: 1px solid var(--divider); }
 .detail-readings small { display: block; margin-top: 4px; font-family: system-ui, sans-serif; }
 .table-scroll { overflow-x: auto; }
+.journal-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+#journal-events { padding-left: 24px; }
+#journal-events li { padding: 16px 0; border-bottom: 1px solid var(--divider); overflow-wrap: anywhere; }
+#journal-events time { color: var(--subtle); font-variant-numeric: tabular-nums; }
+#journal-events p { margin: 8px 0; color: var(--text); }
+#journal-events pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-alt); }
+#journal-error:empty { margin: 0; }
 #electrical-panel table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 #electrical-panel th, #electrical-panel td { padding: 12px 10px; text-align: left; border: 1px solid var(--border); }
 #electrical-panel th { background: var(--surface-alt); }

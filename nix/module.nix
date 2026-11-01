@@ -66,6 +66,7 @@ in
         SIGEN_BIND = cfg.bind;
         SIGEN_ALERTS_FILE = "/var/lib/sigen-server/alerts.json";
         SIGEN_WRITE_AUDIT_FILE = "/var/lib/sigen-server/writes.jsonl";
+        SIGEN_JOURNAL_FILE = "/var/lib/sigen-server/events.sqlite3";
         SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
       } // cfg.environment;
       serviceConfig = {

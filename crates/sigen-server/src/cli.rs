@@ -24,6 +24,13 @@ pub struct Cli {
         default_value = "sigen-writes.jsonl"
     )]
     pub write_audit_file: PathBuf,
+    /// SQLite file for the persistent event journal (parent directory must exist)
+    #[arg(
+        long,
+        env = "SIGEN_JOURNAL_FILE",
+        default_value = "sigen-events.sqlite3"
+    )]
+    pub journal_file: PathBuf,
     /// Additional trusted HTTP Host authorities (hostname[:port]); repeat or comma-separate
     #[arg(long, env = "SIGEN_ALLOWED_HOSTS", value_delimiter = ',', value_parser = parse_authority)]
     pub allowed_host: Vec<String>,

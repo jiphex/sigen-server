@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const demo = new URLSearchParams(window.location.search).get('demo') === '1' ? createDemo() : null;
 let busy = false, latest = null, savingAlert = false, updatesPaused = false;
 let alertSignature = '';
+let journalBusy = false, journalLoaded = false, journalBefore = null;
 const emsNames = {0:'Maximum self-consumption',1:'AI',2:'Time of use',5:'Full feed-in',7:'Remote EMS',9:'Custom'};
 const fmt = (n, unit, digits=1) => `${Number(n).toFixed(digits)} ${unit}`;
 function setText(id, text) {
@@ -28,6 +29,7 @@ function controls(c) {
 }
 function display(s) {
   latest = s;
+  if (!demo) journalHealth(s.journal);
   showDetails(s);
   if (demo) $('demo-metrics-output').textContent = renderDemoMetrics(s);
   showAlerts(s.alerts);
@@ -163,6 +165,7 @@ $('updates-toggle').addEventListener('click', () => {
 });
 $('active-alerts-link').addEventListener('click', () => { $('alerts-heading').focus(); });
 if (demo) {
+  $('journal-panel').hidden = true;
   document.title = 'Sigen status · DEMO';
   $('demo-banner').hidden = false;
   $('demo-metrics').hidden = false;
@@ -293,3 +296,99 @@ async function saveAlert(id, enabled) {
     await refresh();
   }
 }
+
+function journalHealth(health) {
+  setText('journal-health', !health ? 'Event journal unavailable.' : health.last_error
+    ? `Journal has gaps: ${health.dropped_total} events lost since startup. ${health.last_error}`
+    : 'Journal is recording events.');
+}
+
+function eventDescription(event) {
+  const d = event.details || {};
+  const titles = {
+    server_started: 'Server started', shutdown_requested: 'Shutdown requested',
+    server_stopped: 'Server stopped gracefully', server_failed: 'Server stopped with an error',
+    hardware_connected: 'Hardware connected', hardware_disconnected: 'Hardware disconnected',
+    alert_activated: 'Alert activated', alert_escalated: 'Alert severity increased',
+    alert_recovered: 'Alert recovered', alert_disabled: 'Active alert disabled',
+    alert_setting_changed: 'Alert setting changed', control_requested: 'Control requested',
+    control_confirmed: 'Control confirmed', control_failed: 'Control failed — setting may have changed',
+    control_cancelled: 'Control cancelled before execution', control_rejected: 'Control queue rejected request'
+  };
+  const command = d.command;
+  const setting = command?.action === 'backup_soc' ? `Backup reserve ${command.percent}%`
+    : command?.action === 'remote_ems' ? `Remote EMS ${command.enabled ? 'enabled' : 'disabled'}`
+    : command?.action === 'ems_mode' ? `EMS mode ${command.mode}` : '';
+  return [titles[event.kind] || event.kind, d.name || d.alert, setting,
+    d.enabled == null ? '' : d.enabled ? 'enabled' : 'disabled',
+    d.outage_seconds == null ? '' : `outage ${d.outage_seconds}s`,
+    d.duration_seconds == null ? '' : `duration ${d.duration_seconds}s`,
+    d.error || d.outcome?.error || d.outcome?.reason].filter(Boolean).join(' · ');
+}
+
+// Fetch on demand rather than replacing history during status polling, preserving
+// the page and expanded event details while someone reads older events.
+async function loadJournal(before = null) {
+  if (demo || journalBusy) return;
+  const focused = document.activeElement;
+  journalBusy = true;
+  $('journal-events').setAttribute('aria-busy', 'true');
+  $('journal-refresh').disabled = true;
+  $('journal-older').disabled = true;
+  $('journal-category').disabled = true;
+  showError('journal-error', '');
+  try {
+    const query = new URLSearchParams({limit: '25'});
+    if ($('journal-category').value) query.set('category', $('journal-category').value);
+    if (before != null) query.set('before', String(before));
+    const response = await fetch(`/api/events?${query}`, {cache: 'no-store'});
+    if (!response.ok) throw new Error(`Could not load event history (${response.status}). Try again.`);
+    const page = await response.json();
+    const rows = page.events.map(event => {
+      const row = document.createElement('li');
+      const time = document.createElement('time');
+      const date = new Date(event.timestamp_unix_ms);
+      time.dateTime = date.toISOString();
+      time.textContent = date.toLocaleString();
+      const title = document.createElement('p');
+      title.textContent = eventDescription(event);
+      const device = document.createElement('small');
+      device.textContent = `${event.target} · inverter ${event.unit}${event.serial_number ? ' · ' + event.serial_number : ''}`;
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = 'Event details';
+      const body = document.createElement('pre');
+      body.textContent = JSON.stringify({id: event.id, session: event.session, ...event.details}, null, 2);
+      details.append(summary, body);
+      row.append(time, title, device, details);
+      return row;
+    });
+    $('journal-events').replaceChildren(...rows);
+    journalBefore = page.next_before;
+    journalLoaded = true;
+    journalHealth(page.health);
+    setText('journal-page-status', page.events.length
+      ? `Showing ${page.events.length} ${before == null ? 'newest' : 'older'} events.${page.next_before == null ? ' End of history.' : ''}`
+      : 'No events match this filter.');
+  } catch (error) {
+    showError('journal-error', error.message);
+  } finally {
+    journalBusy = false;
+    $('journal-events').setAttribute('aria-busy', 'false');
+    $('journal-refresh').disabled = false;
+    $('journal-older').disabled = journalBefore == null;
+    $('journal-category').disabled = false;
+    restoreFocus(focused?.disabled ? $('journal-refresh') : focused);
+  }
+}
+$('journal-panel').addEventListener('toggle', () => {
+  if ($('journal-panel').open && !journalLoaded) loadJournal();
+});
+$('journal-refresh').addEventListener('click', () => loadJournal());
+$('journal-category').addEventListener('change', () => {
+  journalBefore = null;
+  $('journal-events').replaceChildren();
+  setText('journal-page-status', 'Loading events…');
+  loadJournal();
+});
+$('journal-older').addEventListener('click', () => loadJournal(journalBefore));

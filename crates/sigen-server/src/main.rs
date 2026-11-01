@@ -2,6 +2,7 @@ mod alerts;
 mod audit;
 mod cli;
 mod hardware;
+mod journal;
 mod metrics;
 mod model;
 mod mqtt;
@@ -55,11 +56,24 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     status.write().expect("status lock").alerts = alerts::Alerts::load(args.alerts_file, poll)?;
     write_audit.server_started(listener.local_addr()?, address, unit.get())?;
     status.write().expect("status lock").write_audit = Some(write_audit);
+    let journal = journal::Journal::open(&args.journal_file)?;
+    {
+        let mut s = status.write().expect("status lock");
+        s.journal = Some(journal.clone());
+        s.event(
+            journal::Category::Server,
+            "server_started",
+            serde_json::json!({
+                "version":env!("CARGO_PKG_VERSION"), "listen":listener.local_addr()?.to_string(),
+                "write_audit_file":args.write_audit_file.to_string_lossy()
+            }),
+        );
+    }
     // Register notification delivery before the first hardware poll can fail.
     let (stop, stop_receiver) = tokio::sync::watch::channel(false);
     let pushover_task =
         notifier.map(|notifier| pushover::start(notifier, status.clone(), stop_receiver.clone()));
-    let commands = hardware::start(
+    let (commands, hardware_worker) = hardware::start(
         address,
         unit,
         Config {
@@ -91,6 +105,11 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             let mut s = shutdown_status.write().expect("status lock");
             s.shutting_down = true;
             s.invalidate_controls();
+            s.event(
+                journal::Category::Server,
+                "shutdown_requested",
+                serde_json::json!({}),
+            );
         }
         let _ = shutdown_signal.send(true);
     })
@@ -108,7 +127,25 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         let _ = task.await;
     }
     let _ = alerts_task.await;
+    // Hardware can still be completing a blocking request when HTTP stops. Wait
+    // for its terminal events before flushing the journal and recording shutdown.
+    let hardware_result = tokio::task::spawn_blocking(move || hardware_worker.join()).await;
+    let final_status = status.read().expect("status lock").snapshot();
+    journal
+        .finish(
+            &final_status,
+            if result.is_ok() && matches!(hardware_result, Ok(Ok(()))) {
+                "server_stopped"
+            } else {
+                "server_failed"
+            },
+        )
+        .await
+        .map_err(std::io::Error::other)?;
     result?;
+    if !matches!(hardware_result, Ok(Ok(()))) {
+        return Err("Hardware worker failed during shutdown".into());
+    }
     tracing::info!("Server stopped");
     Ok(())
 }

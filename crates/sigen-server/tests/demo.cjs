@@ -8,6 +8,54 @@ const staticDir = path.join(__dirname, '../static');
 const demoSource = fs.readFileSync(path.join(staticDir, 'demo.js'), 'utf8');
 const appSource = fs.readFileSync(path.join(staticDir, 'app.js'), 'utf8');
 
+test('event journal loads on demand, filters and pages without polling away history', async () => {
+  const calls = [];
+  let unavailable = false;
+  const event = (id, kind) => ({id, kind, timestamp_unix_ms: 1700000000000,
+    session: 'session-1', target: '127.0.0.1:502', unit: 1, serial_number: 'serial-1',
+    details: {command: {action: 'backup_soc', percent: 35}, request_id: 'request-1',
+      outcome: {error: '<img src=x onerror=alert(1)>'}}});
+  const ui = dashboard('', async url => {
+    calls.push(url);
+    if (!url.startsWith('/api/events')) return {ok: true, json: async () => simulator().snapshot()};
+    if (unavailable) return {ok: false, status: 503};
+    const older = url.includes('before=2');
+    return {ok: true, json: async () => ({events: older ? [event(1, 'server_started')] : [event(3, 'control_failed'), event(2, 'control_requested')],
+      next_before: older ? null : 2, health: {written_total: 3, dropped_total: 0, last_error: null}})};
+  });
+  await ui.tick();
+  assert.ok(calls.every(url => url === '/api/status'));
+  ui.nodes['journal-category'].value = 'control';
+  await vm.runInContext('loadJournal()', ui.context);
+  assert.match(calls.at(-1), /category=control/);
+  assert.equal(ui.nodes['journal-events'].children.length, 2);
+  const first = ui.nodes['journal-events'].children[0];
+  assert.match(first.textContent, /Control failed/);
+  assert.match(first.textContent, /Backup reserve 35%/);
+  assert.match(first.textContent, /<img src=x onerror=alert\(1\)>/);
+  assert.ok(first.children.every(node => node.tag !== 'img'));
+  assert.equal(ui.nodes['journal-older'].disabled, false);
+  const eventCalls = calls.filter(url => url.startsWith('/api/events')).length;
+  await ui.tick();
+  assert.equal(calls.filter(url => url.startsWith('/api/events')).length, eventCalls);
+  assert.equal(ui.nodes['journal-events'].children[0], first);
+  unavailable = true;
+  await vm.runInContext('loadJournal(journalBefore)', ui.context);
+  assert.match(ui.nodes['journal-error'].textContent, /503/);
+  assert.equal(ui.nodes['journal-events'].children[0], first);
+  unavailable = false;
+  await vm.runInContext('loadJournal(journalBefore)', ui.context);
+  assert.match(calls.at(-1), /before=2/);
+  assert.equal(ui.nodes['journal-events'].children.length, 1);
+  assert.equal(ui.nodes['journal-older'].disabled, true);
+  assert.match(ui.nodes['journal-page-status'].textContent, /End of history/);
+  vm.runInContext("journalHealth({dropped_total: 2, last_error: 'disk full'})", ui.context);
+  assert.match(ui.nodes['journal-health'].textContent, /2 events lost.*disk full/);
+  const preview = dashboard('?demo=1', () => { throw new Error('demo must not fetch'); });
+  assert.equal(preview.nodes['journal-panel'].hidden, true);
+  await vm.runInContext('loadJournal()', preview.context);
+});
+
 function simulator() {
   const context = vm.createContext({});
   vm.runInContext(demoSource, context);
@@ -120,7 +168,7 @@ test('demo Prometheus output matches live exporter metadata and contains finite 
     assert.ok(output.includes(`sigen_${field} ${status.readings[field]}\n`), field);
   }
   for (const [, name, help, type] of rust.matchAll(/"(sigen_\w+)",\s*"([^"]+)",\s*"(gauge|counter)"/g)) {
-    if (name.startsWith('sigen_pushover_') || name === 'sigen_mqtt_connected') continue;
+    if (name.startsWith('sigen_pushover_') || name.startsWith('sigen_journal_') || name === 'sigen_mqtt_connected') continue;
     assert.ok(output.includes(`# HELP ${name} ${help}\n# TYPE ${name} ${type}\n`), name);
   }
   for (const line of output.trim().split('\n')) {

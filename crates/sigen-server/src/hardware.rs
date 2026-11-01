@@ -1,5 +1,7 @@
+use crate::journal::Category;
 use crate::model::{Controls, Readings, Status};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sigen_modbus::{Client, Config, ReadFunction, RemoteEmsMode, UnitId};
 use std::{
     net::SocketAddr,
@@ -11,7 +13,7 @@ use tokio::sync::oneshot;
 
 pub type SharedStatus = Arc<RwLock<Status>>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     RemoteEms { enabled: bool },
@@ -33,6 +35,7 @@ impl Command {
 }
 
 pub struct Job {
+    id: String,
     pub command: Command,
     pub reply: oneshot::Sender<Result<Controls, String>>,
     pub(crate) source: String,
@@ -58,6 +61,18 @@ impl Job {
             return Err("Hardware is offline, stale, or stopping; no command was queued".into());
         }
         Ok(Self {
+            id: {
+                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+                format!(
+                    "{}-{}-{}",
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_nanos(),
+                    std::process::id(),
+                    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                )
+            },
             command,
             reply,
             source: "internal".into(),
@@ -80,6 +95,36 @@ impl Job {
         }
         Ok(())
     }
+
+    fn event(&self, status: &Status, kind: &str, outcome: serde_json::Value) {
+        status.event(Category::Control, kind, json!({
+            "request_id":self.id, "source":self.source, "command":self.command, "outcome":outcome
+        }));
+    }
+}
+
+/// Journal the request before the worker can execute it, including queue rejection.
+pub fn enqueue(
+    sender: &mpsc::SyncSender<Job>,
+    job: Job,
+    status: &SharedStatus,
+) -> Result<(), mpsc::TrySendError<Job>> {
+    job.event(
+        &status.read().expect("status lock"),
+        "control_requested",
+        json!(null),
+    );
+    sender.try_send(job).inspect_err(|error| {
+        let (job, reason) = match error {
+            mpsc::TrySendError::Full(job) => (job, "queue_full"),
+            mpsc::TrySendError::Disconnected(job) => (job, "worker_unavailable"),
+        };
+        job.event(
+            &status.read().expect("status lock"),
+            "control_rejected",
+            json!({"reason":reason,"write_sent":false}),
+        );
+    })
 }
 
 pub fn start(
@@ -88,12 +133,12 @@ pub fn start(
     config: Config,
     interval: Duration,
     status: SharedStatus,
-) -> mpsc::SyncSender<Job> {
+) -> (mpsc::SyncSender<Job>, thread::JoinHandle<()>) {
     let (sender, receiver) = mpsc::sync_channel::<Job>(4);
     // This permanent worker uses blocking Modbus I/O, request pacing, and recv_timeout.
     // Give it a dedicated OS thread so those waits do not block Tokio workers.
     // Owning the client here also serializes polls, commands, and readback checks.
-    thread::spawn(move || {
+    let worker = thread::spawn(move || {
         let _span = tracing::info_span!("hardware", %address, unit_id = unit.get()).entered();
         tracing::info!("Hardware worker started");
         let mut client = None;
@@ -108,6 +153,7 @@ pub fn start(
                 let mut s = status.write().expect("status lock");
                 match result {
                     Ok((readings, controls)) => {
+                        s.connection_event(true, None);
                         if !s.online {
                             tracing::info!("Hardware connected; readings available");
                         }
@@ -121,6 +167,7 @@ pub fn start(
                             Some(Instant::now() + interval + Duration::from_secs(30));
                     }
                     Err(error) => {
+                        s.connection_event(false, Some(&error));
                         if s.online || s.last_error.as_ref() != Some(&error) {
                             tracing::warn!(%error, "Hardware poll failed");
                         } else {
@@ -146,9 +193,20 @@ pub fn start(
                     // Requests which expired while queued must not execute later.
                     if job.reply.is_closed() {
                         tracing::debug!("Skipping expired hardware command");
+                        job.event(
+                            &status.read().expect("status lock"),
+                            "control_cancelled",
+                            json!({"reason":"request_cancelled", "write_sent":false}),
+                        );
                         continue;
                     }
-                    if let Err(error) = job.check(&status.read().expect("status lock")) {
+                    let readiness = job.check(&status.read().expect("status lock"));
+                    if let Err(error) = readiness {
+                        job.event(
+                            &status.read().expect("status lock"),
+                            "control_cancelled",
+                            json!({"reason":error.to_string(), "write_sent":false}),
+                        );
                         let _ = job.reply.send(Err(error.to_string()));
                         continue;
                     }
@@ -156,8 +214,8 @@ pub fn start(
                     let result = match client.as_mut() {
                         Some(client) => {
                             client.set_write_source(format!(
-                                "{}; requested={:?}",
-                                job.source, job.command
+                                "{}; request_id={}; requested={:?}",
+                                job.source, job.id, job.command
                             ));
                             apply(client, &job.command, || {
                                 job.check(&status.read().expect("status lock"))
@@ -169,11 +227,18 @@ pub fn start(
                         let mut s = status.write().expect("status lock");
                         match &result {
                             Ok(controls) => {
+                                job.event(&s, "control_confirmed", json!({"readback":controls}));
                                 tracing::info!("Hardware command confirmed");
                                 s.controls = Some(controls.clone());
                                 s.last_control_error = None;
                             }
                             Err(error) => {
+                                job.event(
+                                    &s,
+                                    "control_failed",
+                                    json!({"error":error,"may_have_executed":true}),
+                                );
+                                s.connection_event(false, Some(error));
                                 tracing::warn!(%error, "Hardware command failed");
                                 s.last_control_error = Some(error.clone());
                                 s.control_errors += 1;
@@ -208,9 +273,20 @@ pub fn start(
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         }
+        // Requests still queued at shutdown did not execute and need terminal events.
+        for job in receiver.try_iter() {
+            job.event(
+                &status.read().expect("status lock"),
+                "control_cancelled",
+                json!({"reason":"server_stopping", "write_sent":false}),
+            );
+            let _ = job
+                .reply
+                .send(Err("Server is stopping; no command was sent".into()));
+        }
         tracing::info!("Hardware worker stopped");
     });
-    sender
+    (sender, worker)
 }
 
 #[tracing::instrument(level = "debug", skip_all, fields(%address, unit_id = unit.get()))]
@@ -916,8 +992,14 @@ mod safety_tests {
             }
             assert_eq!(writes, 1);
         });
+        let fixture = crate::journal::TestJournal::new();
         let status = Arc::new(RwLock::new(Status::new(address.to_string(), 1)));
-        let sender = start(
+        status.write().unwrap().journal = Some(fixture.journal.clone());
+        let audit_path = fixture.path.with_file_name("writes.jsonl");
+        status.write().unwrap().write_audit = Some(Arc::new(
+            crate::audit::WriteAuditLog::open(&audit_path).unwrap(),
+        ));
+        let (sender, worker) = start(
             address,
             UnitId::inverter(1).unwrap(),
             Config::default(),
@@ -931,14 +1013,16 @@ mod safety_tests {
         }
         let (reply1, response1) = oneshot::channel();
         let (reply2, response2) = oneshot::channel();
+        let request_id;
         {
             let s = status.read().unwrap();
-            sender
-                .try_send(Job::new(Command::BackupSoc { percent: 20.0 }, reply1, &s).unwrap())
-                .unwrap();
-            sender
-                .try_send(Job::new(Command::EmsMode { mode: 3 }, reply2, &s).unwrap())
-                .unwrap();
+            let first = Job::new(Command::BackupSoc { percent: 20.0 }, reply1, &s).unwrap();
+            request_id = first.id.clone();
+            first.event(&s, "control_requested", json!(null));
+            sender.try_send(first).unwrap();
+            let second = Job::new(Command::EmsMode { mode: 3 }, reply2, &s).unwrap();
+            second.event(&s, "control_requested", json!(null));
+            sender.try_send(second).unwrap();
         }
         assert!(
             response1
@@ -961,6 +1045,73 @@ mod safety_tests {
             s.shutting_down = true;
         }
         drop(sender);
+        worker.join().unwrap();
         mock.join().unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let page = fixture
+                .journal
+                .query(crate::journal::Query {
+                    category: Some(Category::Control),
+                    ..crate::journal::Query::default()
+                })
+                .await
+                .unwrap();
+            assert_eq!(page.events.len(), 4);
+            assert_eq!(
+                page.events
+                    .iter()
+                    .filter(|e| e.kind == "control_requested")
+                    .count(),
+                2
+            );
+            let failed = page
+                .events
+                .iter()
+                .find(|e| e.kind == "control_failed")
+                .unwrap();
+            assert_eq!(failed.details["request_id"], request_id);
+            assert_eq!(failed.details["outcome"]["may_have_executed"], true);
+            let cancelled = page
+                .events
+                .iter()
+                .find(|e| e.kind == "control_cancelled")
+                .unwrap();
+            assert_eq!(cancelled.details["outcome"]["write_sent"], false);
+            fixture.journal.shutdown().await.unwrap();
+        });
+        let audit = std::fs::read_to_string(audit_path).unwrap();
+        assert!(audit.contains(&format!("request_id={request_id}")));
+    }
+
+    #[tokio::test]
+    async fn queue_rejection_has_a_correlated_terminal_journal_event() {
+        let fixture = crate::journal::TestJournal::new();
+        let mut status = ready_status();
+        status.journal = Some(fixture.journal.clone());
+        let shared = Arc::new(RwLock::new(status));
+        let (sender, _receiver) = mpsc::sync_channel(1);
+        let mut ids = Vec::new();
+        for index in 0..2 {
+            let (reply, _response) = oneshot::channel();
+            let job = Job::new(
+                Command::BackupSoc { percent: 30.0 },
+                reply,
+                &shared.read().unwrap(),
+            )
+            .unwrap();
+            ids.push(job.id.clone());
+            assert_eq!(enqueue(&sender, job, &shared).is_ok(), index == 0);
+        }
+        let page = fixture
+            .journal
+            .query(crate::journal::Query::default())
+            .await
+            .unwrap();
+        assert_eq!(page.events.len(), 3);
+        assert_eq!(page.events[0].kind, "control_rejected");
+        assert_eq!(page.events[0].details["request_id"], ids[1]);
+        assert_eq!(page.events[0].details["outcome"]["write_sent"], false);
+        fixture.journal.shutdown().await.unwrap();
     }
 }

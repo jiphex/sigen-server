@@ -262,7 +262,7 @@ fn handle_command(
                 // try_send never waits for queue space; the oneshot reply bridges to the hardware thread.
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let queued = job.and_then(|job| commands.try_send(job).map_err(|_| "Hardware command queue is full or unavailable; command was not queued".to_owned()));
+                    let queued = job.and_then(|job| hardware::enqueue(&commands, job, &status).map_err(|_| "Hardware command queue is full or unavailable; command was not queued".to_owned()));
                     let result = match queued {
                         Ok(()) => match tokio::time::timeout(Duration::from_secs(60),response).await {
                             Ok(Ok(result)) => result,

@@ -4,6 +4,31 @@ use std::fmt::Write;
 /// Export health even when offline, but omit stale measurements instead of emitting zeros.
 pub fn render(s: &Status) -> String {
     let mut out = String::new();
+    if let Some(journal) = &s.journal {
+        let health = journal.health();
+        for (name, help, kind, value) in [
+            (
+                "sigen_journal_written_total",
+                "Event journal records committed this process.",
+                "counter",
+                health.written_total,
+            ),
+            (
+                "sigen_journal_dropped_total",
+                "Event journal records lost this process.",
+                "counter",
+                health.dropped_total,
+            ),
+            (
+                "sigen_journal_errors",
+                "Whether this process has encountered event journal data loss.",
+                "gauge",
+                u64::from(health.last_error.is_some()),
+            ),
+        ] {
+            metric(&mut out, name, help, kind, value);
+        }
+    }
     out.push_str("# HELP sigen_alert_enabled Whether an alert is enabled.\n# TYPE sigen_alert_enabled gauge\n# HELP sigen_alert_active Whether an enabled alert is active.\n# TYPE sigen_alert_active gauge\n# HELP sigen_alert_known Whether the alert condition can currently be evaluated.\n# TYPE sigen_alert_known gauge\n");
     for alert in &s.alerts.items {
         for (metric, value) in [

@@ -54,8 +54,10 @@ fn help_hides_credentials_and_environment_options_can_be_overridden() {
 fn environment_only_configuration_starts_and_logs_full_bound_url() {
     let audit_path =
         std::env::temp_dir().join(format!("sigen-startup-audit-{}.jsonl", std::process::id()));
+    let journal_path = audit_path.with_extension("sqlite3");
     let mut child = server()
         .env("SIGEN_WRITE_AUDIT_FILE", &audit_path)
+        .env("SIGEN_JOURNAL_FILE", &journal_path)
         .env("SIGEN_ADDRESS", "127.0.0.1:1")
         .env("SIGEN_BIND", "127.0.0.1:0")
         .env("RUST_LOG", "info")
@@ -79,6 +81,9 @@ fn environment_only_configuration_starts_and_logs_full_bound_url() {
     let _ = child.kill();
     let _ = child.wait();
     reader.join().unwrap();
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{suffix}", journal_path.display()));
+    }
     let line = line.expect("server did not log startup URL");
     assert!(line.contains("Server started: http://127.0.0.1:"), "{line}");
     assert!(!line.contains("http://127.0.0.1:0"));
@@ -90,4 +95,110 @@ fn environment_only_configuration_starts_and_logs_full_bound_url() {
     assert_eq!(entry["monitored_unit_id"], 1);
     assert!(line.contains(entry["url"].as_str().unwrap()));
     assert!(entry["timestamp_unix_ms"].as_u64().unwrap() > 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
+    use std::{
+        io::{Read, Write},
+        net::TcpStream,
+        time::Instant,
+    };
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let directory =
+        std::env::temp_dir().join(format!("sigen-journal-lifecycle-{}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    let path = directory.join("events.sqlite3");
+    for run in 0..2 {
+        let mut child = ChildGuard(
+            server()
+                .env("SIGEN_JOURNAL_FILE", &path)
+                .env("SIGEN_WRITE_AUDIT_FILE", directory.join("writes.jsonl"))
+                .env("SIGEN_ADDRESS", "127.0.0.1:1")
+                .env("SIGEN_BIND", "127.0.0.1:0")
+                .env("RUST_LOG", "info")
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        let stderr = child.0.stderr.take().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines() {
+                let line = line.unwrap();
+                if let Some((_, url)) = line.split_once("Server started: http://") {
+                    // The tracing formatter may append ANSI resets or structured fields.
+                    let address: String = url
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit() || matches!(c, '.' | ':'))
+                        .collect();
+                    let _ = tx.send(address);
+                }
+            }
+        });
+        let address = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // An HTTP response also establishes that the shutdown signal listener is active.
+        let mut stream = TcpStream::connect(&address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream
+            .write_all(b"GET /api/events HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(response.contains("server_started"));
+        assert!(
+            Command::new("kill")
+                .args(["-TERM", &child.0.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(exit) = child.0.try_wait().unwrap() {
+                assert!(exit.success());
+                break;
+            }
+            assert!(Instant::now() < deadline, "graceful shutdown timed out");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        reader.join().unwrap();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        let count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM events WHERE kind='server_started'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, run + 1);
+        let last: String = connection
+            .query_row(
+                "SELECT kind FROM events ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(last, "server_stopped");
+        let requested: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM events WHERE kind='shutdown_requested'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(requested, run + 1);
+    }
+    std::fs::remove_dir_all(directory).unwrap();
 }

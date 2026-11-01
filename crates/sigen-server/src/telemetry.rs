@@ -243,6 +243,7 @@ impl Poller {
         };
         if disconnected {
             let mut s = status.write().expect("status lock");
+            s.connection_event(false, Some("Optional telemetry lost the Modbus connection"));
             s.online = false;
             s.last_error =
                 Some("Optional telemetry lost the Modbus connection; reconnecting".into());

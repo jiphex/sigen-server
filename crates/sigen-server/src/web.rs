@@ -4,7 +4,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -29,6 +29,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/status", get(status))
         .route("/api/control", post(control))
         .route("/api/alerts", post(update_alert))
+        .route("/api/events", get(events))
         .route("/metrics", get(prometheus))
         .layer(axum::extract::DefaultBodyLimit::max(4096))
         .layer(axum::middleware::from_fn(trace_request))
@@ -63,6 +64,28 @@ async fn trace_request(request: axum::extract::Request, next: axum::middleware::
 
 async fn status(State(state): State<AppState>) -> impl IntoResponse {
     Json(state.status.read().expect("status lock").snapshot())
+}
+
+async fn events(
+    State(state): State<AppState>,
+    Query(query): Query<crate::journal::Query>,
+) -> Result<impl IntoResponse, ApiError> {
+    query
+        .validate()
+        .map_err(|message| error(StatusCode::BAD_REQUEST, message))?;
+    let journal = state
+        .status
+        .read()
+        .expect("status lock")
+        .journal
+        .clone()
+        .ok_or_else(|| error(StatusCode::SERVICE_UNAVAILABLE, "Event journal unavailable"))?;
+    journal.query(query).await.map(Json).map_err(|_| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Event journal is busy or unavailable",
+        )
+    })
 }
 async fn prometheus(State(state): State<AppState>) -> impl IntoResponse {
     (
@@ -184,7 +207,7 @@ async fn control(
         ));
     // Bridge to the blocking hardware thread without waiting for queue space here;
     // the oneshot below lets this handler await confirmation while yielding to Tokio.
-    state.commands.try_send(job).map_err(|e| match e {
+    crate::hardware::enqueue(&state.commands, job, &state.status).map_err(|e| match e {
         mpsc::TrySendError::Full(_) => error(
             StatusCode::TOO_MANY_REQUESTS,
             "Control queue is full; no command was queued",
@@ -241,6 +264,109 @@ mod tests {
             }),
             receiver,
         )
+    }
+
+    #[tokio::test]
+    async fn event_api_validates_queries_and_pages_offline_history_without_restoring_controls() {
+        let fixture = crate::journal::TestJournal::new();
+        let mut status = Status::new("127.0.0.1:502".into(), 1);
+        status.journal = Some(fixture.journal.clone());
+        status.event(
+            crate::journal::Category::Server,
+            "server_started",
+            json!({}),
+        );
+        status.event(
+            crate::journal::Category::Control,
+            "control_confirmed",
+            json!({"readback":{"backup_soc_percent":35}}),
+        );
+        let (commands, _receiver) = mpsc::sync_channel(1);
+        let app = router(AppState {
+            status: Arc::new(RwLock::new(status)),
+            commands,
+            allowed_hosts: vec![],
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/events?limit=1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        let page: serde_json::Value = serde_json::from_str(&body(response).await).unwrap();
+        assert_eq!(page["events"][0]["kind"], "control_confirmed");
+        let before = page["next_before"].as_i64().unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/events?before={before}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let page: serde_json::Value = serde_json::from_str(&body(response).await).unwrap();
+        assert_eq!(page["events"].as_array().unwrap().len(), 1);
+        assert_eq!(page["events"][0]["kind"], "server_started");
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/events?category=alert")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let page: serde_json::Value = serde_json::from_str(&body(response).await).unwrap();
+        assert!(page["events"].as_array().unwrap().is_empty());
+        for uri in [
+            "/api/events?limit=0",
+            "/api/events?limit=101",
+            "/api/events?before=-1",
+            "/api/events?category=invalid",
+            "/api/events?unknown=1",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{uri}");
+        }
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status: serde_json::Value = serde_json::from_str(&body(response).await).unwrap();
+        assert_eq!(status["online"], false);
+        assert!(status["controls"].is_null());
+        assert_eq!(status["journal"]["written_total"], 2);
+        assert!(status["journal"].get("sender").is_none());
+        fixture.journal.shutdown().await.unwrap();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/events")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
     fn control_request(body: &str, origin: Option<&str>, custom_header: bool) -> Request<Body> {
         let mut request = Request::builder()

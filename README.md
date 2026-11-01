@@ -52,7 +52,7 @@ in `nixpkgs.lib.nixosSystem`. The package can be overridden with
 `services.sigen-server.package`.
 
 The `sigen-server.service` unit starts at boot, restarts on failure, and runs as
-a dynamic unprivileged user. Its persistent alert settings and write audit log
+a dynamic unprivileged user. Its persistent event journal, alert settings and write audit log
 live in `/var/lib/sigen-server`. It listens on localhost by default and does
 not open firewall ports. For remote access, use an authenticated HTTPS reverse
 proxy or a trusted private network; the server has no user authentication.

@@ -26,7 +26,8 @@ or package manager. Dashboard assets are embedded in the executable.
 
 The container listens on `0.0.0.0:3000`; the example publishes it on host localhost.
 Alert settings and the append-only write audit log are stored in `/data/alerts.json`
-and `/data/writes.jsonl`. Use a named volume as above to retain them across container
+and `/data/writes.jsonl`; the event journal is `/data/sigen-events.sqlite3`.
+Use a named volume as above to retain them across container
 replacement. Bind mounts must be writable by UID/GID 65532. Pass existing `SIGEN_*`
 options through environment variables or append CLI options after the image name.
 For example, `podman run --rm sigen-server --help` prints the available options.
@@ -79,7 +80,7 @@ To preview the dashboard, open **http://127.0.0.1:3000/?demo=1** or select
 **Demo mode** in the footer. A persistent banner identifies simulated data.
 Choose solar generation, nighttime discharge, a battery alarm, or an offline
 device; controls and alert toggles operate only on browser-local demo state.
-The demo makes no status API requests, hardware writes, or notification requests.
+The demo makes no status API requests, journal requests, hardware writes, or notification requests.
 Reloading resets demo changes; **Exit demo** returns to the live dashboard.
 Select **Demo Prometheus metrics** to view simulated exporter output that follows
 the current scenario, control settings, and alert toggles. Offline scenarios omit
@@ -196,6 +197,7 @@ See [the code safety review](../../SAFETY_REVIEW.md) for changes and limitations
 
 - `GET /`: dashboard, with `/app.js` and `/style.css` assets.
 - `GET /api/status`: cached readings, control readback, connectivity and timestamps.
+- `GET /api/events`: persistent event history, with optional category and cursor filters.
 - `POST /api/control`: one of the following JSON commands. Returns confirmed
   control readback, or an error; never redirects or retries.
 - `GET /metrics`: Prometheus text exposition, version 0.0.4.
@@ -519,6 +521,59 @@ hardware connectivity. Delivery failures do not stop hardware polling or HTTP.
 Tests use a local mock API for request encoding, acceptance/rejection, retry
 limits, recovery suppression, and state/credential handling. No real Pushover
 notifications are sent by tests.
+
+## Event journal
+
+The **Event journal** panel keeps a persistent timeline of server starts and
+graceful shutdowns, hardware connection loss/recovery, alert activation/escalation/
+recovery, alert toggle changes, and accepted control requests and their outcomes.
+Repeated poll failures and unchanged alerts do not add rows. Disabling an active
+alert is recorded as disabling, not hardware recovery. Outage durations cover
+observations within the running process; no events can be observed while it is down.
+
+Events live in `sigen-events.sqlite3` in the working directory. Override with
+`--journal-file /path/to/events.sqlite3` or `SIGEN_JOURNAL_FILE`. The parent directory
+must exist. New databases have mode 0600 on Unix. Containers keep the default file
+under `/data`; the NixOS module uses `/var/lib/sigen-server/events.sqlite3`.
+History is retained indefinitely; no telemetry samples are stored here and
+Prometheus remains the measurement-history store. Reopening a journal never
+restores live controls, hardware readiness, or active alert state.
+
+Expand the panel to load the newest 25 events, filter by category, and use
+**Older events** to page back. **Newest events** refreshes history explicitly so
+regular status polling does not disturb a page being read. Demo mode hides the
+journal and never fetches live event history. Structured details include the
+observed device serial when known and a process session identifier. Control
+request IDs are included in both journal details and write audit sources, linking
+the command to its actual wire transmissions. Malformed requests and requests
+rejected before a hardware job can be created are not journaled. An accepted
+request without a terminal outcome after a crash has an unknown outcome.
+
+`GET /api/events?category=control&limit=25&before=123` returns an object with
+`events`, `next_before`, and `health`. All parameters are optional. Categories
+are `server`, `connectivity`, `alert`, `control`, and `settings`; limit defaults
+to 50 and must be 1–100. Events are newest first by insertion ID. Pass
+`next_before` as `before` for the next page; a null cursor means the end. IDs
+keep pagination stable across new arrivals and wall-clock changes. Each event
+contains `id`, `timestamp_unix_ms`, `session`, `target`, `unit`, `serial_number`,
+`category`, `kind`, and structured `details`. Like the other read APIs, this
+endpoint has no built-in authentication.
+
+SQLite runs on a dedicated thread with WAL and full synchronization. A bounded
+queue keeps disk I/O out of hardware and HTTP workers. Database open/schema errors
+fail startup; runtime write failures or queue overflow drop the affected events
+and report errors without stopping hardware controls. `/api/status` exposes
+`journal` health, and Prometheus exports `sigen_journal_written_total`,
+`sigen_journal_dropped_total`, and `sigen_journal_errors`. Counters reset on
+restart; the error remains visible for the rest of the process even after writes
+recover. The journal supplements the synchronous, fail-closed Modbus audit below.
+
+Graceful shutdown waits for the hardware worker, drains accepted journal entries,
+and commits a final shutdown event. A crash or power loss can lose events still
+in the memory queue, and cannot produce a graceful-shutdown record. To back up,
+stop the server cleanly before copying the database, or use SQLite's online backup
+facility while it is running. Copying only the main file while running can miss
+events still in the WAL. Keep backups on persistent storage along with the audit.
 
 ## Modbus write audit
 
