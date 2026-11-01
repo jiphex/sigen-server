@@ -1,6 +1,7 @@
 use crate::{hardware::now, model::Status};
 use std::fmt::Write;
 
+/// Export health even when offline, but omit stale measurements instead of emitting zeros.
 pub fn render(s: &Status) -> String {
     let mut out = String::new();
     out.push_str("# HELP sigen_alert_enabled Whether an alert is enabled.\n# TYPE sigen_alert_enabled gauge\n# HELP sigen_alert_active Whether an enabled alert is active.\n# TYPE sigen_alert_active gauge\n# HELP sigen_alert_known Whether the alert condition can currently be evaluated.\n# TYPE sigen_alert_known gauge\n");

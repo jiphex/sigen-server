@@ -79,6 +79,8 @@ fn error(code: StatusCode, message: impl Into<String>) -> ApiError {
     (code, Json(json!({"error": message.into()})))
 }
 
+/// Gate state-changing requests with a trusted Host, a custom header, and an Origin
+/// match when supplied. Origin may be absent for non-browser API clients.
 fn check_origin(headers: &HeaderMap, allowed_hosts: &[String]) -> Result<(), ApiError> {
     // Origin == Host alone permits DNS rebinding: an attacker's hostname can
     // resolve to this server while retaining a same-origin browser context.
@@ -180,6 +182,8 @@ async fn control(
             peer.map(|p| p.0.0.to_string())
                 .unwrap_or_else(|| "unavailable".into())
         ));
+    // Bridge to the blocking hardware thread without waiting for queue space here;
+    // the oneshot below lets this handler await confirmation while yielding to Tokio.
     state.commands.try_send(job).map_err(|e| match e {
         mpsc::TrySendError::Full(_) => error(
             StatusCode::TOO_MANY_REQUESTS,

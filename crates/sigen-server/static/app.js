@@ -11,6 +11,7 @@ function showError(id, message) {
   // Keep alert regions mounted, and announce only changes to their message.
   setText(id, message || '');
 }
+// Restore focus lost when controls were disabled, without stealing focus after navigation.
 function restoreFocus(target) {
   if (target?.isConnected && !target.disabled && !target.closest('fieldset:disabled')
       && document.activeElement === document.body) target.focus({preventScroll: true});
@@ -80,6 +81,7 @@ async function refresh() {
     if (latest?.readings) $('soc-bar').setAttribute('aria-valuetext', `${fmt(latest.readings.battery_soc_percent, '%')} (last known reading)`);
   }
 }
+// Optional groups age independently; daily values also belong to the device's local day.
 function sampleStatus(sample, s, daily = false, maxAge = 600) {
   if (sample?.unsupported) return 'Unavailable on this device / firmware';
   if (sample?.value == null) return sample?.last_error ? 'Read failed · retrying' : 'Waiting for data…';
@@ -199,6 +201,7 @@ function alertStatusIcon(status) {
   icon.append(path);
   return icon;
 }
+// Reuse rows to preserve checkbox focus; update the live summary only when alerts change.
 function showAlerts(alerts) {
   if (!alerts || savingAlert) return;
   const active = alerts.items.filter(a => a.active);
@@ -258,6 +261,8 @@ function showAlerts(alerts) {
   }
   for (const row of existing.values()) row.remove();
 }
+// Serialize saves while keeping toggles focusable, then refresh authoritative settings
+// after either success or failure to reconcile the checkbox state.
 async function saveAlert(id, enabled) {
   if (savingAlert) {
     const toggle = Array.from($('alerts').children).find(row => row.dataset.alertId === id)?.children[0].children[0];

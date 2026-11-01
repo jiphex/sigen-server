@@ -29,6 +29,7 @@ pub fn start(
         last_command_error: None,
         topic_prefix: config.prefix.clone(),
     });
+    // Broker I/O, timers, and shutdown waits are async, so they yield Tokio workers.
     tokio::spawn(run(config, status, commands, stop))
 }
 
@@ -160,6 +161,7 @@ fn publish(
         .try_publish(topic, QoS::AtMostOnce, retain, payload)
         .map_err(|_| "MQTT publication queue is full or unavailable".into())
 }
+/// Keep diagnostics visible offline, but publish null measurements and controls when stale.
 fn snapshot_payload(config: &Config, status: &Status) -> serde_json::Value {
     let online = fresh(config, status);
     json!({"alerts":status.alerts,"online":online,"last_success_unix":status.last_success_unix,"target":status.target,"unit":status.unit,
@@ -184,6 +186,8 @@ fn publish_state(client: &AsyncClient, config: &Config, status: &Status) -> Resu
     )
 }
 
+/// Decode explicit control topics, rejecting retained or duplicate deliveries so stored
+/// broker messages and retransmissions cannot replay hardware commands.
 fn parse_command(config: &Config, message: &Publish) -> Result<Command, String> {
     if !config.controls {
         return Err("MQTT controls are disabled".into());
@@ -224,6 +228,8 @@ fn parse_command(config: &Config, message: &Publish) -> Result<Command, String> 
     Ok(command)
 }
 
+/// Allow one MQTT command awaiting confirmation at a time; reject contention immediately
+/// instead of accumulating commands that may become stale before execution.
 fn handle_command(
     message: Publish,
     config: Arc<Config>,
@@ -252,6 +258,8 @@ fn handle_command(
                             message.topic, config.id, config.host, config.port
                         ))
                     });
+                // Await hardware confirmation separately so broker events keep being polled.
+                // try_send never waits for queue space; the oneshot reply bridges to the hardware thread.
                 tokio::spawn(async move {
                     let _permit = permit;
                     let queued = job.and_then(|job| commands.try_send(job).map_err(|_| "Hardware command queue is full or unavailable; command was not queued".to_owned()));

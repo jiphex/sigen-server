@@ -170,6 +170,7 @@ impl Alerts {
         };
         Ok(Self::new(settings, Some(path), poll_seconds + 30))
     }
+    /// Replace settings via a synced sibling file so readers do not see partial JSON.
     fn save(&self, settings: &Settings) -> io::Result<()> {
         let Some(path) = &self.path else {
             return Ok(());
@@ -190,6 +191,7 @@ impl Alerts {
 }
 
 /// Evaluate from cached readings only. Never clears hardware faults using stale data.
+/// Notify on activation, escalation, or confirmed recovery, rather than on every poll.
 pub fn refresh(status: &mut Status, now: u64) {
     let fresh = status.fresh()
         && status
@@ -276,6 +278,7 @@ pub fn refresh(status: &mut Status, now: u64) {
     }
 }
 
+/// Persist a toggle before applying it; a failed save leaves live settings intact.
 pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<Alerts> {
     let mut s = status.write().expect("status lock");
     let mut settings = s.alerts.settings.clone();
@@ -291,6 +294,7 @@ pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<A
 }
 
 pub fn start(status: SharedStatus, mut stop: watch::Receiver<bool>) -> tokio::task::JoinHandle<()> {
+    // This loop waits on async timer/shutdown events and only inspects cached hardware state.
     tokio::spawn(async move {
         let mut timer = tokio::time::interval(Duration::from_secs(1));
         loop {

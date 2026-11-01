@@ -94,6 +94,8 @@ impl Model {
             Scenario::GridOutage,
         ][(self.started.elapsed().as_secs() / self.config.cycle_seconds % 4) as usize]
     }
+    /// Derive instantaneous flows from the scenario and writable EMS settings.
+    /// Positive battery power charges; positive grid power imports, balancing the load.
     fn power(&self) -> Power {
         let scenario = self.scenario();
         let wave = (self.started.elapsed().as_secs_f64() / 12.0).sin();
@@ -153,6 +155,8 @@ impl Model {
         (u32::from(self.plant_settings[&address]) << 16)
             | u32::from(self.plant_settings[&(address + 1)])
     }
+    /// Integrate the current power over elapsed real time before reads or setting changes.
+    /// Daily counters reset on the simulator's UTC day boundary; totals keep accumulating.
     fn tick(&mut self) {
         let elapsed = self.updated.elapsed().as_secs_f64();
         self.updated = Instant::now();
@@ -202,6 +206,7 @@ impl Model {
             })
             .collect()
     }
+    /// Validate the whole request before applying settings, preventing partial multiword writes.
     pub fn write(&mut self, unit: u8, address: u16, values: &[u16]) -> Result<(), u8> {
         self.tick();
         let plant = unit == 247;

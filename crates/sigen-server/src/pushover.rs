@@ -90,6 +90,8 @@ impl Notifier {
             recovery: args.pushover_recovery,
         })
     }
+    /// Translate severity into delivery priority and classify failures for worker retries.
+    /// Success means API acceptance, not acknowledgement by the notification recipient.
     async fn send(&self, note: &Notification) -> Result<(), Failure> {
         let title = format!(
             "Sigen: {}{}",
@@ -166,6 +168,7 @@ pub fn start(
         s.pushover = Some(Status::default());
         s.alerts.notifications = Some(sender);
     }
+    // Channel waits, HTTP delivery, and retry delays are async and yield Tokio workers.
     tokio::spawn(async move {
         tracing::info!(
             recovery = notifier.recovery,

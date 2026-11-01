@@ -24,6 +24,8 @@ impl<T> Default for Sample<T> {
     }
 }
 impl<T> Sample<T> {
+    /// Remove unusable values from an export copy, keeping timestamps and error diagnostics.
+    /// Daily counters also expire when the device-local day changes.
     fn retain_current(&mut self, timestamp: u64, max_age: u64, day: Option<i64>, daily: bool) {
         if self.unsupported
             || self.last_error.is_some()
@@ -36,6 +38,7 @@ impl<T> Sample<T> {
         }
     }
 
+    /// Preserve the last successful value on failure; report whether reconnection is needed.
     fn record(&mut self, result: sigen_modbus::Result<T>, day: Option<i64>) -> bool {
         match result {
             Ok(value) => {
@@ -134,6 +137,7 @@ impl Poller {
     }
 
     /// Returns true if the optional read broke the connection. Never attempts writes.
+    /// Read at most one due group, rotating fairly and leaving time for the next core poll.
     pub fn poll_if_due(
         &mut self,
         client: &mut Client,

@@ -117,6 +117,7 @@ function createDemo() {
   };
 }
 
+// Mirror live export freshness and units locally so demo mode needs no /metrics request.
 function renderDemoMetrics(status) {
   const lines = ['# DEMO MODE: these metrics contain simulated data. The live /metrics endpoint is unchanged.'];
   function metric(name, help, type, value) {

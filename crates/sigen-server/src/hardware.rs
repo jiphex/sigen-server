@@ -46,6 +46,8 @@ impl Job {
         self
     }
 
+    /// Bind a command to the current hardware epoch and a monotonic expiry time.
+    /// Reconnecting later must not revive work accepted against an earlier state.
     pub fn new(
         command: Command,
         reply: oneshot::Sender<Result<Controls, String>>,
@@ -64,6 +66,7 @@ impl Job {
         })
     }
 
+    /// Recheck both before execution and immediately before each write is sent.
     fn check(&self, status: &Status) -> sigen_modbus::Result<()> {
         if self.reply.is_closed() || Instant::now() >= self.deadline {
             return Err(sigen_modbus::Error::InvalidArgument(
@@ -87,6 +90,9 @@ pub fn start(
     status: SharedStatus,
 ) -> mpsc::SyncSender<Job> {
     let (sender, receiver) = mpsc::sync_channel::<Job>(4);
+    // This permanent worker uses blocking Modbus I/O, request pacing, and recv_timeout.
+    // Give it a dedicated OS thread so those waits do not block Tokio workers.
+    // Owning the client here also serializes polls, commands, and readback checks.
     thread::spawn(move || {
         let _span = tracing::info_span!("hardware", %address, unit_id = unit.get()).entered();
         tracing::info!("Hardware worker started");
@@ -208,6 +214,8 @@ pub fn start(
 }
 
 #[tracing::instrument(level = "debug", skip_all, fields(%address, unit_id = unit.get()))]
+/// Collect a complete core poll, checking device identity whenever reconnecting.
+/// Reads span multiple requests; the worker publishes readings only if all succeed.
 fn poll(
     client: &mut Option<Client>,
     address: SocketAddr,
@@ -277,6 +285,8 @@ fn read_controls(client: &mut Client) -> sigen_modbus::Result<Controls> {
     })
 }
 
+/// Apply one command and confirm its readback, preparing standby before enabling EMS.
+/// Errors can follow an applied write, so callers must not blindly retry the command.
 fn apply(
     client: &mut Client,
     command: &Command,

@@ -101,6 +101,8 @@ impl Default for Config {
 }
 
 /// A serialized, paced TCP connection. Methods block until their response or timeout.
+/// Async callers should run this client on a dedicated thread or in spawn_blocking;
+/// wrapping these methods in an async block does not make their I/O or sleeps async.
 #[derive(Debug)]
 pub struct Client {
     stream: TcpStream,
@@ -305,6 +307,9 @@ impl Client {
         self.exchange_checked(unit, pdu, || Ok(()))
     }
 
+    /// Pace and send one frame, then validate its matching response without retrying.
+    /// Transport or framing errors retire the stream because its state is uncertain;
+    /// a valid device exception leaves it usable for subsequent requests.
     fn exchange_checked(
         &mut self,
         unit: UnitId,
@@ -315,6 +320,7 @@ impl Client {
             return Err(Error::Disconnected);
         }
         if let Some(last) = self.last_request {
+            // Blocking pacing is intentional: this client uses synchronous TCP I/O.
             thread::sleep(self.config.request_interval.saturating_sub(last.elapsed()));
         }
         self.transaction = self.transaction.wrapping_add(1);
@@ -403,6 +409,7 @@ fn validate_range(address: u16, count: u16, max: u16) -> Result<()> {
     Ok(())
 }
 
+/// Share one deadline across TCP fragments so a slow trickle cannot extend the timeout.
 fn read_until(stream: &mut TcpStream, mut buffer: &mut [u8], deadline: Instant) -> io::Result<()> {
     while !buffer.is_empty() {
         let remaining = deadline.saturating_duration_since(Instant::now());

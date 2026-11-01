@@ -26,6 +26,8 @@ impl WriteAuditLog {
         }))
     }
 
+    /// Serialize complete JSONL records and sync each one before reporting success.
+    /// Errors propagate to the write path rather than silently losing audit records.
     fn append(&self, mut entry: serde_json::Value) -> io::Result<()> {
         entry["timestamp_unix_ms"] = serde_json::json!(
             SystemTime::now()

@@ -59,6 +59,7 @@ impl Status {
         self.fresh() && self.controls.is_some()
     }
 
+    /// Use a monotonic deadline so wall-clock adjustments cannot extend data validity.
     pub fn fresh(&self) -> bool {
         !self.shutting_down
             && self.online
@@ -67,6 +68,7 @@ impl Status {
                 .is_some_and(|t| std::time::Instant::now() < t)
     }
 
+    /// Hide expired controls in API responses while retaining readings for stale-data display.
     pub fn snapshot(&self) -> Self {
         let mut snapshot = self.clone();
         if !self.fresh() {

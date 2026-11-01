@@ -228,6 +228,8 @@ fn u32_at(r: &[u16], i: usize) -> u32 {
 fn unsigned(r: &[u16], i: usize, gain: f64) -> f64 {
     u32_at(r, i) as f64 / gain
 }
+// Combine high-word-first registers, then interpret the full value as two's complement
+// before scaling; interpreting individual words as signed would corrupt the result.
 fn signed(r: &[u16], i: usize, gain: f64) -> f64 {
     u32_at(r, i) as i32 as f64 / gain
 }
