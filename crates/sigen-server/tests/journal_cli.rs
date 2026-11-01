@@ -141,6 +141,12 @@ fn bad_paths_and_schemas_fail_without_creating_or_migrating_a_database() {
 #[test]
 fn validates_options_and_explicit_path_overrides_environment() {
     let fixture = Fixture::new();
+    let version = fixture.run(&["--version"]);
+    assert!(version.status.success());
+    assert_eq!(
+        String::from_utf8(version.stdout).unwrap(),
+        format!("sigen-journal {}\n", env!("CARGO_PKG_VERSION"))
+    );
     for args in [
         ["--limit", "0"],
         ["--limit", "101"],

@@ -11,7 +11,7 @@ use std::{
 
 /// List persistent Sigen journal events, newest first. The server need not be running.
 #[derive(Parser)]
-#[command(version)]
+#[command(name = "sigen-journal", version)]
 struct Args {
     /// Existing SQLite journal file
     #[arg(

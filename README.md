@@ -5,6 +5,8 @@ live inverter simulator. See the [server documentation](crates/sigen-server/READ
 for configuration and the [Modbus documentation](crates/sigen-modbus/README.md)
 for the library and simulator.
 
+See [release notes](CHANGELOG.md) for changes and upgrade notes.
+
 ## Nix
 
 With Nix flakes enabled, run these commands from the repository root:
