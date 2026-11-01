@@ -7,6 +7,8 @@ for the library and simulator.
 
 See [release notes](CHANGELOG.md) for changes and upgrade notes.
 
+An importable [Grafana dashboard](grafana/README.md) is included for the Prometheus metrics.
+
 Licensed under the [BSD 3-Clause License](LICENSE).
 
 ## Nix

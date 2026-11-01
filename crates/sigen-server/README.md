@@ -227,6 +227,10 @@ Backup reserve accepts 0–100%, rounded to 0.1%.
 
 ## Prometheus
 
+An importable [Grafana dashboard](../../grafana/README.md) covers the exported
+metrics, with datasource/job/instance selectors, power and energy charts,
+battery/electrical readings, alerts, and integration health.
+
 ```yaml
 scrape_configs:
   - job_name: sigen

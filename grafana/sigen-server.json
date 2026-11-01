@@ -1,0 +1,4213 @@
+{
+  "id": null,
+  "uid": "sigen-server",
+  "title": "Sigen server",
+  "description": "Sigenergy power, battery, energy, electrical, alerts and exporter health. Select one Prometheus job and instance.",
+  "tags": [
+    "sigen",
+    "sigenergy",
+    "energy",
+    "prometheus"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "15s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "links": [
+    {
+      "title": "Server documentation",
+      "type": "link",
+      "url": "https://github.com/jiphex/sigen-server/blob/main/crates/sigen-server/README.md",
+      "targetBlank": true
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "options": [],
+        "current": {},
+        "regex": "",
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(sigen_up, job)",
+          "refId": "job-variable"
+        },
+        "definition": "label_values(sigen_up, job)",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "options": [],
+        "current": {}
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(sigen_up{job=~\"${job:regex}\"}, instance)",
+          "refId": "instance-variable"
+        },
+        "definition": "label_values(sigen_up{job=~\"${job:regex}\"}, instance)",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "options": [],
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Reading this dashboard",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Grid:** positive = import, negative = export. **Battery:** positive = charging, negative = discharging. Daily energy follows the device’s local day. Optional telemetry may be unavailable; missing values are not zero. Current values use instant queries at the selected range end. Detailed events live in the server’s event journal."
+      }
+    },
+    {
+      "id": 2,
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Prometheus scrape",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "description": "Whether Prometheus can scrape this server. Separate from hardware connectivity.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Offline",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Online",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Exporter",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Hardware readings",
+      "gridPos": {
+        "x": 4,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "description": "Online means the core hardware readings are fresh, not merely that the HTTP server is running.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Offline",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Online",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Hardware readings",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Battery charge",
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_battery_soc_percent{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Battery charge",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Solar generation",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_pv_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Solar generation",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Grid power",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "description": "Positive import; negative export. This is a plant measurement.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_grid_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Grid power",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Battery power",
+      "gridPos": {
+        "x": 20,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "description": "Positive charging; negative discharging.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_battery_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Battery power",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Power and charge",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Power flows",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 16,
+        "h": 8
+      },
+      "description": "Signed measurements are preserved. Plant active power is not a measurement of household load.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_pv_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Solar (plant)",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_grid_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Grid (+ import)",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Battery (+ charge)",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_inverter_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Inverter active power",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_plant_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Plant active power",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Battery charge and backup reserve",
+      "gridPos": {
+        "x": 16,
+        "y": 9,
+        "w": 8,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "decimals": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_soc_percent{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "State of charge",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_backup_soc_percent{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Backup reserve",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Energy",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Solar today (inverter)",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      },
+      "description": "Device-local daily total. This gauge resets at device-local midnight; it is not a counter.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_pv_daily_energy_kwh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Solar today (inverter)",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Load today (plant)",
+      "gridPos": {
+        "x": 6,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      },
+      "description": "Device-local daily total. This gauge resets at device-local midnight; it is not a counter.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_load_daily_energy_kwh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Load today (plant)",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Battery charged today",
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      },
+      "description": "Device-local daily total. This gauge resets at device-local midnight; it is not a counter.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_battery_daily_charge_energy_kwh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Battery charged today",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Battery discharged today",
+      "gridPos": {
+        "x": 18,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      },
+      "description": "Device-local daily total. This gauge resets at device-local midnight; it is not a counter.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_battery_daily_discharge_energy_kwh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Battery discharged today",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Device-local daily energy totals",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Raw daily gauges, not rates or sums over the selected range. Resets follow the inverter’s local day.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_pv_daily_energy_kwh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Solar (inverter)",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_load_daily_energy_kwh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Load (plant)",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_daily_charge_energy_kwh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Battery charge",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_daily_discharge_energy_kwh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Battery discharge",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Grid import over selected range",
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 6,
+        "h": 8
+      },
+      "description": "Counter increase across the selected time range, adjusted for observed resets and extrapolated by Prometheus. Gaps or sparse observations can reduce accuracy; this is not a billing total.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(sigen_grid_import_energy_kwh_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__range])",
+          "legendFormat": "Import",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Grid export over selected range",
+      "gridPos": {
+        "x": 18,
+        "y": 22,
+        "w": 6,
+        "h": 8
+      },
+      "description": "Counter increase across the selected time range, adjusted for observed resets and extrapolated by Prometheus. Gaps or sparse observations can reduce accuracy; this is not a billing total.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(sigen_grid_export_energy_kwh_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__range])",
+          "legendFormat": "Export",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Cumulative grid energy",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 8
+      },
+      "description": "Plant totals since the new statistics interface was initialized, not daily energy. Firmware initialization may reset these counters.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_grid_import_energy_kwh_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Import",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_grid_export_energy_kwh_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Export",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "Battery and temperature",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Temperatures",
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_temperature_celsius{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Battery average",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_min_temperature_celsius{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Battery minimum",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_max_temperature_celsius{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Battery maximum",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_inverter_temperature_celsius{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Inverter",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Cell voltages",
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "volt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_cell_voltage_volts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Average",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_min_cell_voltage_volts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Minimum",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_max_cell_voltage_volts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Maximum",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Available battery energy",
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 10,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watth",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_charge_available_wh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Available charging energy",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_discharge_available_wh{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Available discharging energy",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Battery power limits",
+      "gridPos": {
+        "x": 10,
+        "y": 47,
+        "w": 10,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_charge_limit_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Charge limit",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_battery_discharge_limit_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Discharge limit",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Battery health",
+      "gridPos": {
+        "x": 20,
+        "y": 47,
+        "w": 4,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_battery_soh_percent{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Battery health",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "row",
+      "title": "Electrical readings",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Inverter phase voltage",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 8,
+        "h": 8
+      },
+      "description": "Only phases with a defined phase-neutral measurement for the inverter wiring are exported.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "volt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_inverter_phase_voltage_volts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Phase {{phase}}",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Inverter phase current",
+      "gridPos": {
+        "x": 8,
+        "y": 56,
+        "w": 8,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "amp",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_inverter_phase_current_amps{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Phase {{phase}}",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Grid sensor phase power",
+      "gridPos": {
+        "x": 16,
+        "y": 56,
+        "w": 8,
+        "h": 8
+      },
+      "description": "Plant grid sensor measurements; positive import, negative export. Requires a connected grid sensor.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_grid_phase_power_watts{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Phase {{phase}}",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Grid frequency",
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "hertz",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_grid_frequency_hertz{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Frequency",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Inverter power factor",
+      "gridPos": {
+        "x": 12,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": -1,
+          "max": 1,
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_inverter_power_factor{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Power factor",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Grid connection",
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 8,
+        "h": 4
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Off grid",
+                  "color": "orange",
+                  "index": 0
+                },
+                "1": {
+                  "text": "On grid",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_grid_connected{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Grid connection",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Grid sensor",
+      "gridPos": {
+        "x": 8,
+        "y": 72,
+        "w": 8,
+        "h": 4
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Disconnected",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Connected",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_grid_sensor_connected{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Grid sensor",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "Output wiring",
+      "gridPos": {
+        "x": 16,
+        "y": 72,
+        "w": 8,
+        "h": 4
+      },
+      "description": "Raw output wiring type. Unknown future values remain visible as numbers.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Single phase",
+                  "color": "blue",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Three phase, three wire",
+                  "color": "blue",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Three phase, four wire",
+                  "color": "blue",
+                  "index": 2
+                },
+                "3": {
+                  "text": "L1/L2/N",
+                  "color": "blue",
+                  "index": 3
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_inverter_output_type{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Output wiring",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "row",
+      "title": "EMS controls (readback only)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 76,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 37,
+      "type": "stat",
+      "title": "Remote EMS",
+      "gridPos": {
+        "x": 0,
+        "y": 77,
+        "w": 8,
+        "h": 4
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Disabled",
+                  "color": "text",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Enabled",
+                  "color": "blue",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_remote_ems_enabled{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Remote EMS",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "stat",
+      "title": "Remote EMS mode",
+      "gridPos": {
+        "x": 8,
+        "y": 77,
+        "w": 8,
+        "h": 4
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "PCS remote control",
+                  "color": "blue",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Standby",
+                  "color": "blue",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Maximum self-consumption",
+                  "color": "blue",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Charge — grid first",
+                  "color": "blue",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Charge — solar first",
+                  "color": "blue",
+                  "index": 4
+                },
+                "5": {
+                  "text": "Discharge — solar first",
+                  "color": "blue",
+                  "index": 5
+                },
+                "6": {
+                  "text": "Discharge — battery first",
+                  "color": "blue",
+                  "index": 6
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_remote_ems_mode{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Remote EMS mode",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "type": "stat",
+      "title": "Plant EMS work mode",
+      "gridPos": {
+        "x": 16,
+        "y": 77,
+        "w": 8,
+        "h": 4
+      },
+      "description": "Plant EMS work mode and remote control mode are separate register values.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Maximum self-consumption",
+                  "color": "blue",
+                  "index": 0
+                },
+                "1": {
+                  "text": "AI",
+                  "color": "blue",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Time of use",
+                  "color": "blue",
+                  "index": 2
+                },
+                "5": {
+                  "text": "Full feed-in",
+                  "color": "blue",
+                  "index": 3
+                },
+                "7": {
+                  "text": "Remote EMS",
+                  "color": "blue",
+                  "index": 4
+                },
+                "9": {
+                  "text": "Custom",
+                  "color": "blue",
+                  "index": 5
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_ems_work_mode{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Plant EMS work mode",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "type": "row",
+      "title": "Alerts and alarm words",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 81,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 41,
+      "type": "state-timeline",
+      "title": "Alert state",
+      "gridPos": {
+        "x": 0,
+        "y": 82,
+        "w": 12,
+        "h": 8
+      },
+      "description": "An active alert can remain latched while data is stale. Interpret together with condition-known status.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Clear",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Active",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "rowHeight": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_alert_active{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "{{alert}}",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "state-timeline",
+      "title": "Alert condition known",
+      "gridPos": {
+        "x": 12,
+        "y": 82,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Zero means the condition cannot currently be evaluated. Disabled alerts are known by definition.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unknown",
+                  "color": "orange",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Known",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "rowHeight": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_alert_known{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "{{alert}}",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "type": "state-timeline",
+      "title": "Alert enabled",
+      "gridPos": {
+        "x": 0,
+        "y": 90,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Disabled",
+                  "color": "text",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Enabled",
+                  "color": "blue",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "rowHeight": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_alert_enabled{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "{{alert}}",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "Raw alarm bitfields",
+      "gridPos": {
+        "x": 12,
+        "y": 90,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Raw register masks for groups 1–5. Zero means no bits set; numeric magnitude does not indicate severity.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sigen_alarm_bits{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Group {{group}}",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "type": "row",
+      "title": "Server and integration health",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 98,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 46,
+      "type": "timeseries",
+      "title": "Poll and control error rate",
+      "gridPos": {
+        "x": 0,
+        "y": 99,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Counter rates handle server restarts. The rate window follows the datasource scrape interval.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: errors/min",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(sigen_poll_errors_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__rate_interval]) * 60",
+          "legendFormat": "Poll errors",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(sigen_control_errors_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__rate_interval]) * 60",
+          "legendFormat": "Control errors",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "type": "state-timeline",
+      "title": "Availability history",
+      "gridPos": {
+        "x": 12,
+        "y": 99,
+        "w": 12,
+        "h": 8
+      },
+      "description": "MQTT is absent when disabled. Unknown or missing samples are not interpreted as offline or healthy.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Offline",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Online",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "rowHeight": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "Prometheus scrape",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Hardware readings",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_mqtt_connected{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "MQTT",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "type": "stat",
+      "title": "Core sample age",
+      "gridPos": {
+        "x": 0,
+        "y": 107,
+        "w": 6,
+        "h": 4
+      },
+      "description": "Age measured by the server at the most recent scrape.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_sample_age_seconds{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Core sample age",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "type": "stat",
+      "title": "Last successful hardware poll",
+      "gridPos": {
+        "x": 6,
+        "y": 107,
+        "w": 6,
+        "h": 4
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_last_success_timestamp_seconds{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} * 1000) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Last successful poll",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "type": "stat",
+      "title": "Poll errors over selected range",
+      "gridPos": {
+        "x": 12,
+        "y": 107,
+        "w": 6,
+        "h": 4
+      },
+      "description": "Prometheus-extrapolated counter increase, adjusted for observed resets; fractional values are possible.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(sigen_poll_errors_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__range])",
+          "legendFormat": "Poll errors over selected range",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "type": "stat",
+      "title": "Control errors over selected range",
+      "gridPos": {
+        "x": 18,
+        "y": 107,
+        "w": 6,
+        "h": 4
+      },
+      "description": "Prometheus-extrapolated counter increase, adjusted for observed resets; fractional values are possible.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(sigen_control_errors_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__range])",
+          "legendFormat": "Control errors over selected range",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "type": "stat",
+      "title": "Journal integrity",
+      "gridPos": {
+        "x": 0,
+        "y": 111,
+        "w": 8,
+        "h": 4
+      },
+      "description": "Sticky event-loss indicator for this server process; resets on restart. Journal metrics are absent in older versions.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "No loss reported",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Events lost",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_journal_errors{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Journal integrity",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 53,
+      "type": "stat",
+      "title": "Journal records committed",
+      "gridPos": {
+        "x": 8,
+        "y": 111,
+        "w": 8,
+        "h": 4
+      },
+      "description": "Since this server process started; not the total stored journal size.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_journal_written_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Journal records committed",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 54,
+      "type": "stat",
+      "title": "Journal events lost",
+      "gridPos": {
+        "x": 16,
+        "y": 111,
+        "w": 8,
+        "h": 4
+      },
+      "description": "Since this server process started. Storage failures and queue overflow can lose journal events.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sigen_journal_dropped_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Journal events lost",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 55,
+      "type": "stat",
+      "title": "Pushover accepted over selected range",
+      "gridPos": {
+        "x": 0,
+        "y": 115,
+        "w": 8,
+        "h": 4
+      },
+      "description": "Optional integration. Counts are extrapolated by Prometheus; accepted does not prove delivery to a phone.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(sigen_pushover_sent_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__range])",
+          "legendFormat": "Pushover accepted over selected range",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 56,
+      "type": "stat",
+      "title": "Pushover failed over selected range",
+      "gridPos": {
+        "x": 8,
+        "y": 115,
+        "w": 8,
+        "h": 4
+      },
+      "description": "Optional integration. Counts are extrapolated by Prometheus; accepted does not prove delivery to a phone.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(sigen_pushover_failed_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__range])",
+          "legendFormat": "Pushover failed over selected range",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "type": "stat",
+      "title": "Last Pushover acceptance age",
+      "gridPos": {
+        "x": 16,
+        "y": 115,
+        "w": 8,
+        "h": 4
+      },
+      "description": "Time since the API last accepted a notification. Unavailable until a notification is accepted.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(clamp_min(time() - sigen_pushover_last_success_timestamp_seconds{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}, 0)) and on(job, instance) (up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "Acceptance age",
+          "editorMode": "code",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ]
+    }
+  ]
+}
