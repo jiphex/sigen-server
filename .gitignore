@@ -1,4 +1,6 @@
 /target
+/result
+/result-*
 /sigen-writes.jsonl
 
 /sigen-alerts.json
