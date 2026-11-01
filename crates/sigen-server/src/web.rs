@@ -429,6 +429,7 @@ mod tests {
                     serde_json::from_str(&body(response).await).unwrap();
                 assert_eq!(status["online"], false);
                 assert!(status["readings"].is_null());
+                assert_eq!(status["server_version"], env!("CARGO_PKG_VERSION"));
             }
         }
         assert!(receiver.try_recv().is_err()); // Status/scrapes never trigger Modbus traffic.

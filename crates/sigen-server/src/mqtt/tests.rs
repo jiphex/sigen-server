@@ -56,6 +56,8 @@ fn discovery_groups_entities_and_has_stable_ids_classes_and_nonoptimistic_contro
     assert_eq!(doc["device"]["identifiers"][0], "test_sigen");
     assert_eq!(doc["device"]["serial_number"], "ABC123");
     assert_eq!(doc["origin"]["name"], "sigen-server");
+    assert_eq!(doc["origin"]["sw_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(doc["device"]["sw_version"], "V1");
     assert_eq!(doc["availability_mode"], "all");
     let components = doc["components"].as_object().unwrap();
     assert_eq!(components.len(), 37);
@@ -150,6 +152,7 @@ fn stale_and_offline_snapshots_do_not_publish_measurements_or_controls() {
     s.last_success_unix = Some(hardware::now() - c.stale_after - 1);
     let payload = snapshot_payload(&c, &s);
     assert_eq!(payload["online"], false);
+    assert_eq!(payload["server_version"], env!("CARGO_PKG_VERSION"));
     assert!(payload["controls"].is_null());
     assert!(payload["readings"].is_null());
     assert!(payload["details"].is_null());

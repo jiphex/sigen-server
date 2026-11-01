@@ -201,7 +201,8 @@ See [the code safety review](../../SAFETY_REVIEW.md) for changes and limitations
 ## HTTP API
 
 - `GET /`: dashboard, with `/app.js` and `/style.css` assets.
-- `GET /api/status`: cached readings, control readback, connectivity and timestamps.
+- `GET /api/status`: cached readings, control readback, connectivity, timestamps,
+  and the running binary's `server_version` (also shown in the dashboard footer).
 - `GET /api/events`: persistent event history, with optional category and cursor filters.
 - `POST /api/control`: one of the following JSON commands. Returns confirmed
   control readback, or an error; never redirects or retries.
@@ -365,7 +366,7 @@ Topics with the default prefix and `SIGEN_MQTT_ID=house_battery`:
 | Topic | Payload | Retained |
 | --- | --- | --- |
 | `homeassistant/device/house_battery/config` | Home Assistant device discovery JSON | yes |
-| `sigen/house_battery/state` | JSON with `online`, `last_success_unix`, `readings`, `details`, `device_day`, `controls`, `alerts`, `target`, `unit` | yes |
+| `sigen/house_battery/state` | JSON with `server_version`, `online`, `last_success_unix`, `readings`, `details`, `device_day`, `controls`, `alerts`, `target`, `unit` | yes |
 | `sigen/house_battery/availability` | `online` / `offline` | yes |
 | `sigen/house_battery/command/remote_ems` | `ON` / `OFF` | **never** |
 | `sigen/house_battery/command/ems_mode` | An exact option name from the discovery document | **never** |

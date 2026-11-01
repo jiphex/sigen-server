@@ -173,7 +173,7 @@ pub fn payload(config: &Config, status: &Status) -> Value {
         device["serial_number"] = json!(info.serial_number);
         device["sw_version"] = json!(info.firmware_version);
     }
-    json!({"device":device,"origin":{"name":"sigen-server","sw_version":env!("CARGO_PKG_VERSION")},
+    json!({"device":device,"origin":{"name":"sigen-server","sw_version":status.server_version},
         "state_topic":format!("{}/state",config.prefix),"qos":0,
         "availability":availability,"availability_mode":"all","components":components})
 }

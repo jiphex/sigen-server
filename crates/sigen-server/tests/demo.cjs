@@ -224,9 +224,12 @@ test('normal URLs retain live status requests and do not enable demo mode', asyn
     const calls = [];
     const ui = dashboard(search, async (url, options) => {
       calls.push([url, options]);
-      return {ok: true, json: async () => simulator().snapshot()};
+      return {ok: true, json: async () => ({...simulator().snapshot(), server_version: '9.8.7'})};
     });
     await ui.tick();
+    assert.equal(ui.nodes['server-version'].textContent, 'sigen-server 9.8.7');
+    await vm.runInContext("display({...latest, online: false, controls: null})", ui.context);
+    assert.equal(ui.nodes['server-version'].textContent, 'sigen-server 9.8.7');
     assert.equal(ui.nodes['demo-banner'].hidden, true);
     assert.equal(ui.nodes['demo-metrics'].hidden, true);
     assert.ok(calls.length > 0);
@@ -240,6 +243,7 @@ test('normal URLs retain live status requests and do not enable demo mode', asyn
 
 test('polling preserves alert checkbox focus and avoids repeating unchanged announcements', async () => {
   const ui = dashboard('?demo=1', () => { throw new Error('Unexpected fetch'); });
+  assert.equal(ui.nodes['server-version'].textContent, 'Demo · browser simulation');
   const row = ui.nodes.alerts.children[2];
   const checkbox = row.children[0].children[0];
   checkbox.focus();

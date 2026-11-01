@@ -29,6 +29,8 @@ function controls(c) {
 }
 function display(s) {
   latest = s;
+  setText('server-version', demo ? 'Demo · browser simulation'
+    : s.server_version ? `sigen-server ${s.server_version}` : 'Server version unavailable');
   if (!demo) journalHealth(s.journal);
   showDetails(s);
   if (demo) $('demo-metrics-output').textContent = renderDemoMetrics(s);

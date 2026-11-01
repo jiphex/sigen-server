@@ -164,7 +164,7 @@ fn publish(
 /// Keep diagnostics visible offline, but publish null measurements and controls when stale.
 fn snapshot_payload(config: &Config, status: &Status) -> serde_json::Value {
     let online = fresh(config, status);
-    json!({"alerts":status.alerts,"online":online,"last_success_unix":status.last_success_unix,"target":status.target,"unit":status.unit,
+    json!({"server_version":status.server_version,"alerts":status.alerts,"online":online,"last_success_unix":status.last_success_unix,"target":status.target,"unit":status.unit,
         "device_day":status.device_day,
         "details":if online { serde_json::to_value(status.details.for_export(hardware::now(), status.device_day,
             status.readings.as_ref().is_some_and(|r| r.grid_sensor_connected))).unwrap() } else { serde_json::Value::Null },

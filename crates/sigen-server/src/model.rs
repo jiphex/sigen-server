@@ -3,6 +3,7 @@ use sigen_modbus::{Battery, DeviceInfo, Inverter, Plant, RunningState};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
+    pub server_version: &'static str,
     pub journal: Option<crate::journal::Journal>,
     #[serde(skip)]
     journal_connected: Option<bool>,
@@ -37,6 +38,7 @@ pub struct Status {
 impl Status {
     pub fn new(target: String, unit: u8) -> Self {
         Self {
+            server_version: env!("CARGO_PKG_VERSION"),
             journal: None,
             journal_connected: None,
             journal_outage_since: None,
