@@ -1,6 +1,6 @@
 //! Durable event history, independent of telemetry and the fail-closed wire audit.
 use rusqlite::{Connection, params};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use std::{
     path::Path,
@@ -10,39 +10,9 @@ use std::{
 };
 use tokio::sync::oneshot;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Category {
-    Server,
-    Connectivity,
-    Alert,
-    Control,
-    Settings,
-}
-impl Category {
-    fn key(self) -> &'static str {
-        match self {
-            Self::Server => "server",
-            Self::Connectivity => "connectivity",
-            Self::Alert => "alert",
-            Self::Control => "control",
-            Self::Settings => "settings",
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct Event {
-    pub id: i64,
-    pub timestamp_unix_ms: i64,
-    pub session: String,
-    pub target: String,
-    pub unit: u8,
-    pub serial_number: Option<String>,
-    pub category: String,
-    pub kind: String,
-    pub details: Value,
-}
+mod query;
+use query::read;
+pub use query::{Category, Event, Query};
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Health {
@@ -50,24 +20,6 @@ pub struct Health {
     pub dropped_total: u64,
     /// Sticky for this process: successful later writes do not conceal a history gap.
     pub last_error: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Query {
-    pub category: Option<Category>,
-    pub before: Option<i64>,
-    pub limit: Option<u16>,
-}
-impl Query {
-    pub fn validate(&self) -> Result<(), String> {
-        if self.before.is_some_and(|id| id <= 0)
-            || self.limit.is_some_and(|limit| limit == 0 || limit > 100)
-        {
-            return Err("before must be positive and limit must be between 1 and 100".into());
-        }
-        Ok(())
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -310,52 +262,6 @@ fn insert(connection: &Connection, event: &Event) -> rusqlite::Result<()> {
             event.serial_number, event.category, event.kind, event.details.to_string()],
     )?;
     Ok(())
-}
-
-fn read(connection: &Connection, query: &Query) -> rusqlite::Result<Vec<Event>> {
-    // Separate plans let category filtering use its index even for a long-lived journal.
-    let (sql, category) = match query.category {
-        Some(category) => (
-            "SELECT id,timestamp_unix_ms,session,target,unit,serial_number,category,kind,details
-             FROM events WHERE id < ?1 AND category = ?2 ORDER BY id DESC LIMIT ?3",
-            category.key(),
-        ),
-        None => (
-            "SELECT id,timestamp_unix_ms,session,target,unit,serial_number,category,kind,details
-             FROM events WHERE id < ?1 AND ?2 = '' ORDER BY id DESC LIMIT ?3",
-            "",
-        ),
-    };
-    let mut statement = connection.prepare(sql)?;
-    statement
-        .query_map(
-            params![
-                query.before.unwrap_or(i64::MAX),
-                category,
-                i64::from(query.limit.unwrap_or(50)) + 1
-            ],
-            |row| {
-                let details: String = row.get(8)?;
-                Ok(Event {
-                    id: row.get(0)?,
-                    timestamp_unix_ms: row.get(1)?,
-                    session: row.get(2)?,
-                    target: row.get(3)?,
-                    unit: row.get(4)?,
-                    serial_number: row.get(5)?,
-                    category: row.get(6)?,
-                    kind: row.get(7)?,
-                    details: serde_json::from_str(&details).map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            8,
-                            rusqlite::types::Type::Text,
-                            Box::new(e),
-                        )
-                    })?,
-                })
-            },
-        )?
-        .collect()
 }
 
 #[cfg(test)]

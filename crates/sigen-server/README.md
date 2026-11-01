@@ -575,6 +575,30 @@ stop the server cleanly before copying the database, or use SQLite's online back
 facility while it is running. Copying only the main file while running can miss
 events still in the WAL. Keep backups on persistent storage along with the audit.
 
+### Query from the command line
+
+`sigen-journal` reads an existing journal directly, whether the server is running
+or stopped. It opens SQLite read-only and never creates or migrates the database.
+It uses the same `SIGEN_JOURNAL_FILE` environment variable and default path as
+the server. An explicit `--journal-file` overrides the environment.
+
+```sh
+cargo run -p sigen-server --bin sigen-journal -- --limit 20
+sigen-journal --journal-file /var/lib/sigen-server/events.sqlite3 --category alert
+sigen-journal --category control --before 123 --limit 50
+sigen-journal --json
+```
+
+Results are newest first, with UTC timestamps, event IDs, category, kind, target,
+unit, and structured details. The default limit is 50 (maximum 100). When more
+events exist, text output prints the `--before` cursor for the next page. `--json`
+prints one JSON object per line (JSONL), including all event fields; no matches
+produce no output. Categories match the
+HTTP API. The tool needs permission to read the journal and its SQLite sidecars.
+With Nix, use `nix run .#sigen-journal -- --journal-file /path/to/events.sqlite3`.
+The container also includes `/sigen-journal`; select it with
+`--entrypoint /sigen-journal` and mount the same `/data` volume.
+
 ## Modbus write audit
 
 Every server hardware write is logged to `sigen-writes.jsonl` in the working

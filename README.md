@@ -11,7 +11,7 @@ With Nix flakes enabled, run these commands from the repository root:
 
 ```sh
 nix develop                          # Rust, Cargo, rustfmt, Clippy, rust-analyzer
-nix build                            # result/bin/{sigen-server,sigen-simulator}
+nix build                            # result/bin/{sigen-server,sigen-simulator,sigen-journal}
 nix flake check                      # Build and run the workspace tests
 nix run . -- --address 192.168.1.50:502
 nix run .#sigen-simulator -- --scenario cycle

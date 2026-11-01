@@ -11,11 +11,12 @@ COPY crates/sigen-server ./crates/sigen-server
 ENV CARGO_PROFILE_RELEASE_STRIP=symbols \
     CARGO_PROFILE_RELEASE_LTO=thin \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
-RUN cargo build --locked --release --package sigen-server --bin sigen-server
+RUN cargo build --locked --release --package sigen-server --bins
 RUN mkdir -p /out/data && chown 65532:65532 /out/data
 
 FROM scratch
 COPY --from=build /build/target/release/sigen-server /sigen-server
+COPY --from=build /build/target/release/sigen-journal /sigen-journal
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build --chown=65532:65532 /out/data /data
 

@@ -43,6 +43,10 @@
           type = "app";
           program = "${self.packages.${system}.sigen-server}/bin/sigen-simulator";
         };
+        sigen-journal = {
+          type = "app";
+          program = "${self.packages.${system}.sigen-server}/bin/sigen-journal";
+        };
       });
 
       devShells = forAllSystems (system:
