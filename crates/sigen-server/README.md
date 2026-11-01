@@ -589,12 +589,13 @@ events still in the WAL. Keep backups on persistent storage along with the audit
 
 `sigen-journal` reads an existing journal directly, whether the server is running
 or stopped. It opens SQLite read-only and never creates or migrates the database.
-It uses the same `SIGEN_JOURNAL_FILE` environment variable and default path as
-the server. An explicit `--journal-file` overrides the environment.
+The optional first argument selects the journal file. It overrides
+`SIGEN_JOURNAL_FILE`; without either, the tool reads
+`/var/lib/sigen-server/events.sqlite3`, matching the NixOS service's storage path.
 
 ```sh
-cargo run -p sigen-server --bin sigen-journal -- --limit 20
-sigen-journal --journal-file /var/lib/sigen-server/events.sqlite3 --category alert
+cargo run -p sigen-server --bin sigen-journal -- ./sigen-events.sqlite3 --limit 20
+sigen-journal /path/to/events.sqlite3 --category alert
 sigen-journal --category control --before 123 --limit 50
 sigen-journal --json
 ```
@@ -605,9 +606,10 @@ events exist, text output prints the `--before` cursor for the next page. `--jso
 prints one JSON object per line (JSONL), including all event fields; no matches
 produce no output. Categories match the
 HTTP API. The tool needs permission to read the journal and its SQLite sidecars.
-With Nix, use `nix run .#sigen-journal -- --journal-file /path/to/events.sqlite3`.
+With Nix, use `nix run .#sigen-journal -- /path/to/events.sqlite3`.
 The container also includes `/sigen-journal`; select it with
-`--entrypoint /sigen-journal` and mount the same `/data` volume.
+`--entrypoint /sigen-journal`, mount the same `/data` volume, and pass
+`/data/sigen-events.sqlite3` as its first argument.
 
 ## Modbus write audit
 

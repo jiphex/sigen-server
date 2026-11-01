@@ -106,7 +106,7 @@ fn reads_live_wal_in_newest_order_and_supports_filters_cursors_and_jsonl() {
 fn bad_paths_and_schemas_fail_without_creating_or_migrating_a_database() {
     let fixture = Fixture::new();
     let missing = fixture.path.with_file_name("missing.sqlite3");
-    let output = fixture.run(&["--journal-file", missing.to_str().unwrap()]);
+    let output = fixture.run(&[missing.to_str().unwrap()]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Cannot open journal"));
     assert!(!missing.exists());
@@ -130,12 +130,7 @@ fn bad_paths_and_schemas_fail_without_creating_or_migrating_a_database() {
     assert_eq!(version, 2);
     let corrupt = fixture.path.with_file_name("corrupt.sqlite3");
     std::fs::write(&corrupt, "not a database").unwrap();
-    assert!(
-        !fixture
-            .run(&["--journal-file", corrupt.to_str().unwrap()])
-            .status
-            .success()
-    );
+    assert!(!fixture.run(&[corrupt.to_str().unwrap()]).status.success());
 }
 
 #[test]
@@ -157,11 +152,13 @@ fn validates_options_and_explicit_path_overrides_environment() {
     }
     let output = fixture.run(&["--help"]);
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("--journal-file"));
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(help.contains("[FILE]"));
+    assert!(help.contains("/var/lib/sigen-server/events.sqlite3"));
+    assert!(!help.contains("--journal-file"));
     let output = Command::new(env!("CARGO_BIN_EXE_sigen-journal"))
         .env_clear()
         .env("SIGEN_JOURNAL_FILE", "does-not-exist.sqlite3")
-        .arg("--journal-file")
         .arg(&fixture.path)
         .arg("--json")
         .output()

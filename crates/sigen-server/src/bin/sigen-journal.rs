@@ -15,9 +15,9 @@ use std::{
 struct Args {
     /// Existing SQLite journal file
     #[arg(
-        long,
         env = "SIGEN_JOURNAL_FILE",
-        default_value = "sigen-events.sqlite3"
+        default_value = "/var/lib/sigen-server/events.sqlite3",
+        value_name = "FILE"
     )]
     journal_file: PathBuf,
     /// Show only this category
