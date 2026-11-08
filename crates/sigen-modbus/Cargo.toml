@@ -1,6 +1,6 @@
 [package]
 name = "sigen-modbus"
-version = "1.0.3"
+version = "1.0.4"
 license = "BSD-3-Clause"
 edition = "2024"
 description = "Sigenergy Modbus TCP client and live inverter simulator"

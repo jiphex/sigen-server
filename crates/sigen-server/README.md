@@ -7,7 +7,7 @@ Enable the inverter's Modbus TCP server first.
 ## Container
 
 Release images are published to `ghcr.io/jiphex/sigen-server` for Linux amd64 and
-arm64. For example, `docker pull ghcr.io/jiphex/sigen-server:1.0.3`; `latest`
+arm64. For example, `docker pull ghcr.io/jiphex/sigen-server:1.0.4`; `latest`
 points to the most recently published release. The Container image workflow runs
 on release tag pushes and can also build an existing tag via manual dispatch.
 

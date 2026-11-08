@@ -1,5 +1,20 @@
 # Release notes
 
+## 1.0.4 — 2026-11-08
+
+### Added
+
+- Read-only Modbus mode enabled by default, with explicit write opt-in via
+  `--dangerously-enable-modbus-writes` or `SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES`.
+- Dashboard Modbus access mode indicator and read-only plant settings.
+- Automatic systemd journal logging when available, with `--log-stderr` or
+  `SIGEN_LOG_STDERR` to select stderr instead.
+
+### Changed
+
+- Modbus read-only connections reject writes before transmission.
+- Server, journal CLI, and simulator report version `1.0.4`.
+
 ## 1.0.3 — 2026-11-08
 
 ### Added
