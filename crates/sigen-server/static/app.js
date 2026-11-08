@@ -27,8 +27,28 @@ function controls(c) {
   }
   $('mode-form').querySelector('button').disabled = !c.remote_ems_enabled;
 }
+function showControlAccess(s) {
+  const readOnly = s.read_only === true;
+  setText('access-mode', demo ? 'Demo · simulated writes only' : readOnly ? 'Read-only · hardware writes disabled' : 'Writable · hardware writes enabled');
+  $('access-mode').className = !demo && !readOnly ? 'writable' : '';
+  setText('controls-heading', readOnly ? 'Plant settings' : 'Plant controls');
+  setText('controls-access', demo ? 'Changes apply to this browser simulation only.' : readOnly
+    ? 'Read-only mode. Current plant settings are shown below; hardware writes are disabled. Alert preferences can still be changed.'
+    : 'Writable mode. Applying these controls changes the hardware settings.');
+  $('controls').hidden = readOnly;
+  $('control-readings').hidden = !readOnly;
+  $('controls-help').hidden = readOnly;
+  $('mode-help').hidden = readOnly;
+  const c = s.controls;
+  setText('remote-reading', c ? c.remote_ems_enabled ? 'Enabled' : 'Disabled' : '—');
+  const mode = c && Array.from($('mode').options).find(option => option.value === String(c.remote_ems_mode));
+  setText('mode-reading', c ? mode?.textContent ?? `Unknown (${c.remote_ems_mode})` : '—');
+  setText('backup-reading', c ? fmt(c.backup_soc_percent, '%') : '—');
+}
 function display(s) {
+  const wasReadOnly = latest?.read_only;
   latest = s;
+  showControlAccess(s);
   setText('server-version', demo ? 'Demo · browser simulation'
     : s.server_version ? `sigen-server ${s.server_version}` : 'Server version unavailable');
   if (!demo) journalHealth(s.journal);
@@ -47,8 +67,10 @@ function display(s) {
   $('controls').disabled = busy || s.read_only || !s.online || !s.controls;
   controls(s.controls);
   if (s.read_only) {
-    $('control-result').textContent = 'Modbus read-only mode: hardware controls are disabled.';
-  } else if (s.online && s.controls && $('control-result').textContent === 'Waiting for data…') {
+    setText('control-result', !s.controls ? 'Waiting for plant settings…'
+      : s.online ? 'Current plant settings.' : 'Last known plant settings · device offline.');
+    $('control-result').className = '';
+  } else if (s.online && s.controls && (wasReadOnly || $('control-result').textContent === 'Waiting for data…')) {
     $('control-result').textContent = 'Plant controls are ready.';
   }
   const r = s.readings;
@@ -81,6 +103,7 @@ async function refresh() {
     setText('connection', 'Server unreachable');
     $('connection').className = '';
     $('controls').disabled = true;
+    if (latest?.read_only && latest.controls) setText('control-result', 'Last known plant settings · server unreachable.');
     document.body.classList.add('stale');
     showError('error', e.message);
     if (latest) showDetails({...latest, online: false});
@@ -135,7 +158,7 @@ function showDetails(s) {
   }
 }
 async function send(command) {
-  if (busy) return;
+  if (busy || latest?.read_only) return;
   const focused = document.activeElement;
   busy = true; $('controls').disabled = true;
   $('control-result').className = '';

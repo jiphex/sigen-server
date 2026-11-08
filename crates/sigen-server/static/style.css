@@ -65,6 +65,9 @@ p, small, dt { color: var(--muted); line-height: 1.5; }
 .device-display > div { min-width: 0; padding: 12px 16px; background: var(--screen); }
 .device-display .device-identity { grid-column: 1 / -1; border-bottom: 1px solid var(--screen-divider); }
 .device-display .device-freshness { border-left: 1px solid var(--screen-divider); }
+.device-display .device-access { grid-column: 1 / -1; border-top: 1px solid var(--screen-divider); }
+#access-mode { color: var(--screen-text); font-family: var(--instrument-font); font-weight: 600; line-height: 1.5; }
+#access-mode.writable { color: var(--demo-text); }
 .device-display .device-message { grid-column: 1 / -1; padding: 0; }
 .display-label { display: block; margin-bottom: 6px; color: var(--label); font-size: .75rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
 #device, #connection, #freshness { margin: 0; color: var(--screen-text); font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }

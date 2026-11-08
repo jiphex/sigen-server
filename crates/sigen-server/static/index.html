@@ -11,6 +11,7 @@
 <div class="device-identity"><dt class="display-label">Device</dt><dd id="device">Connecting…</dd></div>
 <div><dt class="display-label">Connection</dt><dd id="connection" role="status">Starting</dd></div>
 <div class="device-freshness"><dt class="display-label">Last update</dt><dd id="freshness">Waiting for data…</dd></div>
+<div class="device-access"><dt class="display-label">Modbus access</dt><dd id="access-mode" role="status">Checking mode…</dd></div>
 <div class="device-message"><dt class="sr-only">Connection alert</dt><dd id="error" role="alert"></dd></div>
 </dl>
 <div class="update-toolbar"><button id="updates-toggle" type="button" aria-describedby="updates-status">Pause updates</button><p id="updates-status" role="status">Automatic updates run every 3 seconds.</p></div>
@@ -45,7 +46,12 @@
 <p id="journal-health" role="status">Waiting for journal status…</p><p id="journal-error" class="failed" role="alert"></p><p id="journal-page-status" role="status"></p><ol id="journal-events" aria-label="Event history"></ol>
 </details>
 <section class="panel"><h2>System</h2><dl id="health"><dt>Battery temperature</dt><dd id="battery-temp">—</dd><dt>Battery health</dt><dd id="soh">—</dd><dt>Inverter temperature</dt><dd id="inverter-temp">—</dd><dt>Grid frequency</dt><dd id="frequency">—</dd><dt>Grid connection</dt><dd id="grid-state">—</dd><dt>Alarms (groups 1–5)</dt><dd id="alarms">—</dd><dt>EMS mode</dt><dd id="ems">—</dd></dl></section>
-<section class="panel"><h2>Plant controls</h2><p id="controls-help">These settings affect the whole plant, including other connected inverters. Enabling remote EMS selects standby first. Charge and discharge modes use the plant’s existing limits; PCS mode uses its existing dispatch settings.</p>
+<section class="panel"><h2 id="controls-heading">Plant controls</h2><p id="controls-access" role="status">Checking whether hardware writes are enabled…</p><p id="controls-help">These settings affect the whole plant, including other connected inverters. Enabling remote EMS selects standby first. Charge and discharge modes use the plant’s existing limits; PCS mode uses its existing dispatch settings.</p>
+<dl id="control-readings" class="detail-readings" aria-label="Current plant settings" hidden>
+<dt>Remote EMS</dt><dd id="remote-reading">—</dd>
+<dt>Remote control mode</dt><dd id="mode-reading">—</dd>
+<dt>Backup reserve</dt><dd id="backup-reading">—</dd>
+</dl>
 <fieldset id="controls" disabled aria-describedby="controls-help control-result"><legend class="sr-only">Plant controls</legend>
 <form id="remote-form"><label for="remote">Remote EMS</label><select id="remote"><option value="false">Disabled</option><option value="true">Enabled</option></select><button aria-label="Apply remote EMS setting">Apply</button></form>
 <form id="mode-form"><label for="mode">Remote control mode</label><select id="mode" aria-describedby="mode-help"><option value="0">PCS remote control</option><option value="1">Standby</option><option value="2">Maximum self-consumption</option><option value="3">Charge · grid first</option><option value="4">Charge · solar first</option><option value="5">Discharge · solar first</option><option value="6">Discharge · battery first</option></select><button>Set mode</button></form>
