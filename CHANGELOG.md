@@ -1,5 +1,21 @@
 # Release notes
 
+## 1.0.3 — 2026-11-08
+
+### Added
+
+- GitHub release archives for Linux x86_64, Linux ARM64, and Apple Silicon macOS,
+  including the server, journal CLI, simulator, documentation, and SHA-256 checksums.
+- Multi-platform release container images published to GHCR.
+- Importable Grafana dashboard for the exported Prometheus metrics.
+- Running server version displayed in the dashboard and MQTT discovery metadata.
+- BSD 3-Clause license.
+
+### Changed
+
+- `sigen-journal` accepts the journal path as an optional positional argument.
+- Server, journal CLI, and simulator report version `1.0.3`.
+
 ## 1.0.2 — 2026-11-01
 
 ### Added

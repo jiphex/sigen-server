@@ -11,6 +11,36 @@ An importable [Grafana dashboard](grafana/README.md) is included for the Prometh
 
 Licensed under the [BSD 3-Clause License](LICENSE).
 
+## Release binaries
+
+Download prebuilt archives from [GitHub Releases](https://github.com/jiphex/sigen-server/releases).
+Each archive includes `sigen-server`, `sigen-journal`, `sigen-simulator`, the license,
+and documentation. Choose the target for your machine:
+
+| Platform | Target |
+| --- | --- |
+| Linux x86_64 | `x86_64-unknown-linux-musl` |
+| Linux ARM64 | `aarch64-unknown-linux-musl` |
+| Apple Silicon macOS (11 or newer) | `aarch64-apple-darwin` |
+
+Linux binaries are statically linked and work with either glibc or musl.
+For example, download the Linux x86_64 archive and `SHA256SUMS`, then run:
+
+```sh
+sha256sum --ignore-missing -c SHA256SUMS
+tar -xzf sigen-server-1.0.3-x86_64-unknown-linux-musl.tar.gz
+cd sigen-server-1.0.3-x86_64-unknown-linux-musl
+./sigen-server --address 192.168.1.50:502
+```
+
+On macOS, verify with `shasum -a 256` and compare the archive's hash with
+`SHA256SUMS`. macOS binaries are unsigned and are not notarized.
+
+The **Release binaries** GitHub Actions workflow builds and publishes all targets
+when a tag such as `1.0.3` is pushed. It can also run manually with an existing tag
+to add or replace binaries on that release. All three tools must report the tag's
+version before publication; a release is created if it does not already exist.
+
 ## Nix
 
 With Nix flakes enabled, run these commands from the repository root:
