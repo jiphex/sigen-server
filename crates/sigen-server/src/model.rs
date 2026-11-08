@@ -3,6 +3,7 @@ use sigen_modbus::{Battery, DeviceInfo, Inverter, Plant, RunningState};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
+    pub read_only: bool,
     pub server_version: &'static str,
     pub journal: Option<crate::journal::Journal>,
     #[serde(skip)]
@@ -38,6 +39,7 @@ pub struct Status {
 impl Status {
     pub fn new(target: String, unit: u8) -> Self {
         Self {
+            read_only: false,
             server_version: env!("CARGO_PKG_VERSION"),
             journal: None,
             journal_connected: None,
@@ -66,7 +68,7 @@ impl Status {
     }
 
     pub fn controls_ready(&self) -> bool {
-        self.fresh() && self.controls.is_some()
+        !self.read_only && self.fresh() && self.controls.is_some()
     }
 
     /// Enqueue event metadata only; this never waits for journal disk I/O.

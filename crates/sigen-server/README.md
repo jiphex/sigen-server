@@ -46,7 +46,7 @@ all options, or `--version` for the version. For example:
 
 ```sh
 cargo run -p sigen-server -- --address 192.168.1.50:502 --unit-id 1 --bind 127.0.0.1:3000
-cargo run -p sigen-server -- --address 192.168.1.50:502 --mqtt-host 192.168.1.10 --mqtt-id house_battery --mqtt-controls
+cargo run -p sigen-server -- --address 192.168.1.50:502 --mqtt-host 192.168.1.10 --mqtt-id house_battery --mqtt-controls --dangerously-enable-modbus-writes
 ```
 
 All existing `SIGEN_*` environment variables remain supported. Explicit options
@@ -58,6 +58,24 @@ turn those options on; `--mqtt-tls=false` and `--mqtt-controls=false` override
 an enabled environment setting. MQTT credentials are hidden from help output;
 prefer the password environment variable over a command-line password.
 The HTTP URL is logged at startup.
+
+The server is read-only for Modbus by default.
+Only FC03/FC04 read requests can be transmitted in this mode, including after
+reconnecting. Telemetry, metrics and setting readbacks continue normally; HTTP
+hardware controls are rejected, dashboard controls are disabled, and MQTT
+hardware controls are disabled even with `--mqtt-controls`. Alert preferences
+and local logs remain writable.
+
+Enabling writes requires the explicit CLI flag `--dangerously-enable-modbus-writes`.
+**Danger:** this permits controls to change whole-plant hardware settings, including
+other inverters in the same plant. A warning is logged at startup when enabled.
+There is no environment-variable equivalent; `SIGEN_READ_ONLY` and the former
+`--read-only` option are no longer supported. MQTT hardware controls additionally
+require `--mqtt-controls`.
+
+```sh
+cargo run -p sigen-server -- --address 192.168.1.50:502
+```
 
 Environment-only startup also works:
 

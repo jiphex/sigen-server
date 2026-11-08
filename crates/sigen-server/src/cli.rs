@@ -43,6 +43,9 @@ pub struct Cli {
     /// Modbus telemetry read function
     #[arg(long, env = "SIGEN_READ_FUNCTION", default_value_t = 4, value_parser = clap::value_parser!(u8).range(3..=4))]
     pub read_function: u8,
+    /// DANGER: enable Modbus writes that can change whole-plant hardware settings
+    #[arg(long)]
+    pub dangerously_enable_modbus_writes: bool,
     /// File storing alert on/off settings
     #[arg(long, env = "SIGEN_ALERTS_FILE", default_value = "sigen-alerts.json")]
     pub alerts_file: PathBuf,
@@ -160,6 +163,7 @@ mod tests {
         assert_eq!(args.bind.to_string(), "127.0.0.1:3000");
         assert_eq!(args.unit_id, 1);
         assert_eq!(args.poll_seconds, 15);
+        assert!(!args.dangerously_enable_modbus_writes);
         assert!(!args.mqtt.mqtt_tls);
         assert!(args.mqtt.mqtt_host.is_none());
         assert_eq!(
@@ -173,6 +177,26 @@ mod tests {
     }
     #[test]
     fn ranges_and_boolean_overrides() {
+        assert!(
+            parse(&[
+                "sigen-server",
+                "--address",
+                "127.0.0.1:502",
+                "--dangerously-enable-modbus-writes"
+            ])
+            .unwrap()
+            .dangerously_enable_modbus_writes
+        );
+        // The former opt-out must never provide a way to enable writes.
+        assert!(
+            parse(&[
+                "sigen-server",
+                "--address",
+                "127.0.0.1:502",
+                "--read-only=false"
+            ])
+            .is_err()
+        );
         for (flag, value) in [
             ("--unit-id", "0"),
             ("--unit-id", "247"),

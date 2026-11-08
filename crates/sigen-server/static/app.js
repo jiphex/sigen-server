@@ -44,9 +44,11 @@ function display(s) {
   showError('error', s.last_error);
   const age = s.last_success_unix ? Math.max(0, Math.floor(Date.now()/1000)-s.last_success_unix) : null;
   $('freshness').textContent = age === null ? 'Waiting for data…' : `${s.online ? 'Updated' : 'Stale data from'} ${age}s ago.`;
-  $('controls').disabled = busy || !s.online || !s.controls;
+  $('controls').disabled = busy || s.read_only || !s.online || !s.controls;
   controls(s.controls);
-  if (s.online && s.controls && $('control-result').textContent === 'Waiting for data…') {
+  if (s.read_only) {
+    $('control-result').textContent = 'Modbus read-only mode: hardware controls are disabled.';
+  } else if (s.online && s.controls && $('control-result').textContent === 'Waiting for data…') {
     $('control-result').textContent = 'Plant controls are ready.';
   }
   const r = s.readings;

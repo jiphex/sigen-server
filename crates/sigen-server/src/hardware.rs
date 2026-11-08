@@ -57,6 +57,9 @@ impl Job {
         status: &Status,
     ) -> Result<Self, String> {
         command.validate()?;
+        if status.read_only {
+            return Err("Modbus read-only mode is enabled; hardware controls are disabled".into());
+        }
         if !status.controls_ready() {
             return Err("Hardware is offline, stale, or stopping; no command was queued".into());
         }

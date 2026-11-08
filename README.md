@@ -11,6 +11,9 @@ live inverter simulator. See the [server documentation](crates/sigen-server/READ
 for configuration and the [Modbus documentation](crates/sigen-modbus/README.md)
 for the library and simulator.
 
+The server permits only Modbus reads by default. Hardware writes require the
+explicit `--dangerously-enable-modbus-writes` CLI flag.
+
 See [release notes](CHANGELOG.md) for changes and upgrade notes.
 
 An importable [Grafana dashboard](grafana/README.md) is included for the Prometheus metrics.

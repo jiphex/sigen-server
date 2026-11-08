@@ -489,6 +489,69 @@ fn audit_captures_single_multiword_and_cancelled_writes_with_target_and_source()
 }
 
 #[test]
+fn read_only_blocks_writes_and_preserves_reads_after_reconnect() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let worker = thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            // Any leaked write fails the assertion that the next frame is a read.
+            for function in [3, 4] {
+                let header = request(&mut stream, 247, &[function, 0x75, 0x30, 0, 1]);
+                reply(&mut stream, header, &[function, 2, 0, 42]);
+            }
+            assert_eq!(stream.read(&mut [0]).unwrap(), 0);
+        }
+    });
+    let config = Config {
+        read_only: true,
+        ..Config::default()
+    };
+    for _ in 0..2 {
+        let mut client = Client::connect_with_config(address, config.clone()).unwrap();
+        let capture = std::sync::Arc::new(AuditCapture::default());
+        client.set_write_auditor(capture.clone());
+        assert!(matches!(
+            client.write_register(UnitId::PLANT, 40029, 1),
+            Err(Error::ReadOnly)
+        ));
+        assert!(matches!(
+            client.write_registers(UnitId::PLANT, 40001, &[0, 25000]),
+            Err(Error::ReadOnly)
+        ));
+        assert!(matches!(
+            client.write_register_checked(UnitId::PLANT, 40029, 1, || panic!("write callback ran")),
+            Err(Error::ReadOnly)
+        ));
+        assert!(matches!(
+            client.set_remote_ems_enabled(true),
+            Err(Error::ReadOnly)
+        ));
+        assert!(matches!(
+            client.set_remote_ems_mode(RemoteEmsMode::Standby),
+            Err(Error::ReadOnly)
+        ));
+        assert!(matches!(
+            client.set_backup_soc_percent(20.0),
+            Err(Error::ReadOnly)
+        ));
+        assert!(capture.0.lock().unwrap().is_empty());
+        for function in [ReadFunction::Holding, ReadFunction::Input] {
+            assert_eq!(
+                client
+                    .read_registers(UnitId::PLANT, function, 30000, 1)
+                    .unwrap(),
+                [42]
+            );
+        }
+    }
+    worker.join().unwrap();
+}
+
+#[test]
 fn failed_audit_prevents_transmission() {
     #[derive(Debug)]
     struct FailingAudit;

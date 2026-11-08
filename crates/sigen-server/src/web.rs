@@ -616,8 +616,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stale_unconfirmed_and_stopping_hardware_rejects_controls_without_queueing() {
-        for case in 0..3 {
+    async fn stale_unconfirmed_stopping_and_read_only_hardware_rejects_controls_without_queueing() {
+        for case in 0..4 {
             let mut s = Status::new("127.0.0.1:502".into(), 1);
             s.online = true;
             s.control_valid_until = Some(std::time::Instant::now() + Duration::from_secs(45));
@@ -629,7 +629,8 @@ mod tests {
             match case {
                 0 => s.control_valid_until = Some(std::time::Instant::now()),
                 1 => s.controls = None,
-                _ => s.shutting_down = true,
+                2 => s.shutting_down = true,
+                _ => s.read_only = true,
             }
             let (commands, receiver) = mpsc::sync_channel(1);
             let app = router(AppState {

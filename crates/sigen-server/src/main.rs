@@ -40,6 +40,7 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     let bind = args.bind;
     let unit = UnitId::inverter(args.unit_id)?;
     let poll = args.poll_seconds;
+    let read_only = !args.dangerously_enable_modbus_writes;
     let telemetry_function = if args.read_function == 3 {
         ReadFunction::Holding
     } else {
@@ -47,13 +48,25 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     };
     let notifier = pushover::Notifier::from_args(&args.pushover)?;
     let write_audit = Arc::new(audit::WriteAuditLog::open(&args.write_audit_file)?);
-    let mqtt_config = mqtt::Config::from_args(&args.mqtt, &address.to_string(), unit.get(), poll)?;
+    let mut mqtt_config =
+        mqtt::Config::from_args(&args.mqtt, &address.to_string(), unit.get(), poll)?;
+    if read_only {
+        if let Some(config) = &mut mqtt_config {
+            config.controls = false;
+        }
+        tracing::info!("Modbus read-only mode enabled; hardware controls disabled");
+    } else {
+        tracing::warn!(
+            "DANGEROUS: Modbus writes enabled; controls can change whole-plant hardware settings"
+        );
+    }
     let listener = tokio::net::TcpListener::bind(bind).await?;
     let status = Arc::new(RwLock::new(model::Status::new(
         address.to_string(),
         unit.get(),
     )));
     status.write().expect("status lock").alerts = alerts::Alerts::load(args.alerts_file, poll)?;
+    status.write().expect("status lock").read_only = read_only;
     write_audit.server_started(listener.local_addr()?, address, unit.get())?;
     status.write().expect("status lock").write_audit = Some(write_audit);
     let journal = journal::Journal::open(&args.journal_file)?;
@@ -65,7 +78,8 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
             "server_started",
             serde_json::json!({
                 "version":env!("CARGO_PKG_VERSION"), "listen":listener.local_addr()?.to_string(),
-                "write_audit_file":args.write_audit_file.to_string_lossy()
+                "write_audit_file":args.write_audit_file.to_string_lossy(),
+                "read_only":read_only
             }),
         );
     }
@@ -77,6 +91,7 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         address,
         unit,
         Config {
+            read_only,
             telemetry_function,
             ..Config::default()
         },

@@ -25,6 +25,9 @@ fn help_hides_credentials_and_environment_options_can_be_overridden() {
     let help = String::from_utf8(output.stdout).unwrap();
     assert!(help.contains("--address"));
     assert!(help.contains("--mqtt-tls"));
+    assert!(help.contains("--dangerously-enable-modbus-writes"));
+    assert!(help.contains("DANGER"));
+    assert!(!help.contains("--read-only"));
     assert!(!help.contains("test-secret-password"));
     assert!(!help.contains("test-secret-username"));
     assert!(!help.contains("test-private-token"));
@@ -117,8 +120,17 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
     std::fs::create_dir(&directory).unwrap();
     let path = directory.join("events.sqlite3");
     for run in 0..2 {
+        let mut command = server();
+        // Environment settings cannot opt into writes; the CLI flag is required.
+        command
+            .env("SIGEN_READ_ONLY", "false")
+            .env("SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES", "true")
+            .env("SIGEN_MQTT_CONTROLS", "true");
+        if run == 1 {
+            command.arg("--dangerously-enable-modbus-writes");
+        }
         let mut child = ChildGuard(
-            server()
+            command
                 .env("SIGEN_JOURNAL_FILE", &path)
                 .env("SIGEN_WRITE_AUDIT_FILE", directory.join("writes.jsonl"))
                 .env("SIGEN_ADDRESS", "127.0.0.1:1")
@@ -157,6 +169,24 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
         stream.read_to_string(&mut response).unwrap();
         assert!(response.starts_with("HTTP/1.1 200"), "{response}");
         assert!(response.contains("server_started"));
+        let mut stream = TcpStream::connect(&address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream
+            .write_all(b"GET /api/status HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(
+            response.contains(if run == 0 {
+                "\"read_only\":true"
+            } else {
+                "\"read_only\":false"
+            }),
+            "{response}"
+        );
         assert!(
             Command::new("kill")
                 .args(["-TERM", &child.0.id().to_string()])

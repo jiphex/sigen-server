@@ -10,6 +10,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
+    /// This connection permits only read functions.
+    ReadOnly,
     Io(io::Error),
     InvalidArgument(&'static str),
     Protocol(&'static str),
@@ -22,6 +24,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ReadOnly => f.write_str("Modbus read-only mode forbids write functions"),
             Self::Io(e) => write!(f, "Modbus TCP I/O: {e}"),
             Self::InvalidArgument(s) => write!(f, "invalid argument: {s}"),
             Self::Protocol(s) => write!(f, "invalid Modbus response: {s}"),
@@ -81,6 +84,8 @@ pub enum ReadFunction {
 
 #[derive(Clone, Debug)]
 pub struct Config {
+    /// Permit only FC03/FC04 requests for the lifetime of the connection.
+    pub read_only: bool,
     pub connect_timeout: Duration,
     /// Deadline for a complete response, not per TCP fragment.
     pub response_timeout: Duration,
@@ -92,6 +97,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            read_only: false,
             connect_timeout: Duration::from_secs(1),
             response_timeout: Duration::from_secs(1),
             request_interval: Duration::from_secs(1),
@@ -316,6 +322,11 @@ impl Client {
         pdu: &[u8],
         check: impl FnOnce() -> Result<()>,
     ) -> Result<Vec<u8>> {
+        // Allowlist reads at the final shared transmission boundary. Reject before
+        // pacing, auditing or callbacks, and leave the connection usable for reads.
+        if self.config.read_only && !matches!(pdu.first(), Some(0x03 | 0x04)) {
+            return Err(Error::ReadOnly);
+        }
         if !self.usable {
             return Err(Error::Disconnected);
         }

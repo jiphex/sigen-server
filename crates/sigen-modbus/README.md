@@ -172,6 +172,12 @@ fallback request is sent automatically.
 
 ## Connection behavior
 
+Set `Config::read_only = true` to allow only FC03/FC04 requests for the lifetime
+of a connection. All typed and raw writes return `Error::ReadOnly` before
+pacing, audit records, authorization callbacks or network transmission. Rejected
+writes leave the connection usable for reads. Reuse this configuration when
+reconnecting; the default is `false`.
+
 Requests are serialized and spaced at least one second apart (section 4.2).
 Defaults are one second for connecting and one second for a complete response;
 `Config` allows longer timeouts and request intervals. Use one client per plant
