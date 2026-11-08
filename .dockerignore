@@ -2,6 +2,7 @@
 **
 !Cargo.toml
 !Cargo.lock
+!LICENSE
 !crates/
 !crates/sigen-modbus/
 !crates/sigen-modbus/**
