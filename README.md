@@ -11,8 +11,8 @@ live inverter simulator. See the [server documentation](crates/sigen-server/READ
 for configuration and the [Modbus documentation](crates/sigen-modbus/README.md)
 for the library and simulator.
 
-The server permits only Modbus reads by default. Hardware writes require the
-explicit `--dangerously-enable-modbus-writes` CLI flag.
+The server permits only Modbus reads by default. Hardware writes require
+`--dangerously-enable-modbus-writes` or `SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES=true`.
 
 See [release notes](CHANGELOG.md) for changes and upgrade notes.
 

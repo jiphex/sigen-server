@@ -44,7 +44,7 @@ pub struct Cli {
     #[arg(long, env = "SIGEN_READ_FUNCTION", default_value_t = 4, value_parser = clap::value_parser!(u8).range(3..=4))]
     pub read_function: u8,
     /// DANGER: enable Modbus writes that can change whole-plant hardware settings
-    #[arg(long)]
+    #[arg(long, env = "SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES", default_value_t = false, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
     pub dangerously_enable_modbus_writes: bool,
     /// File storing alert on/off settings
     #[arg(long, env = "SIGEN_ALERTS_FILE", default_value = "sigen-alerts.json")]

@@ -26,6 +26,7 @@ fn help_hides_credentials_and_environment_options_can_be_overridden() {
     assert!(help.contains("--address"));
     assert!(help.contains("--mqtt-tls"));
     assert!(help.contains("--dangerously-enable-modbus-writes"));
+    assert!(help.contains("SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES"));
     assert!(help.contains("DANGER"));
     assert!(!help.contains("--read-only"));
     assert!(!help.contains("test-secret-password"));
@@ -100,6 +101,21 @@ fn environment_only_configuration_starts_and_logs_full_bound_url() {
     assert!(entry["timestamp_unix_ms"].as_u64().unwrap() > 0);
 }
 
+#[test]
+fn invalid_modbus_write_environment_value_is_rejected() {
+    let output = server()
+        .env("SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES", "invalid")
+        .args(["--address", "127.0.0.1:1"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("--dangerously-enable-modbus-writes")
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
@@ -119,15 +135,34 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
         std::env::temp_dir().join(format!("sigen-journal-lifecycle-{}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
     let path = directory.join("events.sqlite3");
-    for run in 0..2 {
+    for (run, (environment, flag, read_only)) in [
+        (None, None, true),
+        (Some("false"), None, true),
+        (Some("true"), None, false),
+        (
+            Some("false"),
+            Some("--dangerously-enable-modbus-writes"),
+            false,
+        ),
+        (
+            Some("true"),
+            Some("--dangerously-enable-modbus-writes=false"),
+            true,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let mut command = server();
-        // Environment settings cannot opt into writes; the CLI flag is required.
+        // The former opt-out and MQTT controls alone must not enable Modbus writes.
         command
             .env("SIGEN_READ_ONLY", "false")
-            .env("SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES", "true")
             .env("SIGEN_MQTT_CONTROLS", "true");
-        if run == 1 {
-            command.arg("--dangerously-enable-modbus-writes");
+        if let Some(value) = environment {
+            command.env("SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES", value);
+        }
+        if let Some(flag) = flag {
+            command.arg(flag);
         }
         let mut child = ChildGuard(
             command
@@ -180,7 +215,7 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
         stream.read_to_string(&mut response).unwrap();
         assert!(response.starts_with("HTTP/1.1 200"), "{response}");
         assert!(
-            response.contains(if run == 0 {
+            response.contains(if read_only {
                 "\"read_only\":true"
             } else {
                 "\"read_only\":false"
@@ -212,7 +247,7 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, run + 1);
+        assert_eq!(count, (run + 1) as i64);
         let last: String = connection
             .query_row(
                 "SELECT kind FROM events ORDER BY id DESC LIMIT 1",
@@ -228,7 +263,7 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(requested, run + 1);
+        assert_eq!(requested, (run + 1) as i64);
     }
     std::fs::remove_dir_all(directory).unwrap();
 }

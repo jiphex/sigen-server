@@ -66,11 +66,14 @@ hardware controls are rejected, dashboard controls are disabled, and MQTT
 hardware controls are disabled even with `--mqtt-controls`. Alert preferences
 and local logs remain writable.
 
-Enabling writes requires the explicit CLI flag `--dangerously-enable-modbus-writes`.
+Enable writes with `--dangerously-enable-modbus-writes` or
+`SIGEN_DANGEROUSLY_ENABLE_MODBUS_WRITES=true`. The default is `false` (read-only).
+Use `--dangerously-enable-modbus-writes=false` to override the environment and
+keep Modbus read-only.
 **Danger:** this permits controls to change whole-plant hardware settings, including
 other inverters in the same plant. A warning is logged at startup when enabled.
-There is no environment-variable equivalent; `SIGEN_READ_ONLY` and the former
-`--read-only` option are no longer supported. MQTT hardware controls additionally
+`SIGEN_READ_ONLY` and the former `--read-only` option are no longer supported.
+MQTT hardware controls additionally
 require `--mqtt-controls`.
 
 ```sh
