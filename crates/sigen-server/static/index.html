@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Sigen status</title><link rel="stylesheet" href="/style.css"><script src="/demo.js" defer></script><script src="/app.js" defer></script></head>
-<body><main>
+<body>
+<div class="solar-sky" aria-hidden="true"></div>
+<main>
 <noscript><p>The dashboard requires JavaScript to load readings and enable controls. You can still view <a href="/api/status">status JSON</a> and <a href="/metrics">Prometheus metrics</a>.</p></noscript>
 <header><div><h1><svg class="sun-mark" aria-hidden="true" focusable="false" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>Sigen status</h1></div><a id="active-alerts-link" href="#alerts-panel" hidden></a></header>
 <aside id="demo-banner" hidden aria-label="Demo mode">

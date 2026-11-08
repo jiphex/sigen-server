@@ -26,6 +26,8 @@ pub fn router(state: AppState) -> Router {
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../static/app.js")) }))
         .route("/demo.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../static/demo.js")) }))
         .route("/style.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../static/style.css")) }))
+        .route("/lens-flare-light.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], include_bytes!("../static/lens-flare-light.png").as_slice()) }))
+        .route("/lens-flare-dark.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], include_bytes!("../static/lens-flare-dark.png").as_slice()) }))
         .route("/api/status", get(status))
         .route("/api/control", post(control))
         .route("/api/alerts", post(update_alert))
@@ -401,6 +403,8 @@ mod tests {
             "/app.js",
             "/demo.js",
             "/style.css",
+            "/lens-flare-light.png",
+            "/lens-flare-dark.png",
             "/api/status",
             "/metrics",
         ] {
@@ -416,7 +420,13 @@ mod tests {
                     .headers()
                     .contains_key(header::CONTENT_SECURITY_POLICY)
             );
-            if path == "/metrics" {
+            if path == "/lens-flare-light.png" || path == "/lens-flare-dark.png" {
+                assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+            } else if path == "/metrics" {
                 assert_eq!(
                     response.headers()[header::CONTENT_TYPE],
                     "text/plain; version=0.0.4; charset=utf-8"
