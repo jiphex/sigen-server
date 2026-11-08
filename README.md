@@ -1,5 +1,11 @@
 # Sigen server
 
+> ⚠️ 🚨 **Experimental software — do not use this to control real hardware.**
+> This project may contain bugs that send incorrect or unsafe commands to your
+> inverter or battery. It could disrupt your power supply, damage equipment, or
+> create dangerous conditions. Use the simulator or browser demo for evaluation.
+> Do not rely on it for real-world operation or safety.
+
 Sigenergy web dashboard and Prometheus exporter, with a Modbus TCP client and
 live inverter simulator. See the [server documentation](crates/sigen-server/README.md)
 for configuration and the [Modbus documentation](crates/sigen-modbus/README.md)
