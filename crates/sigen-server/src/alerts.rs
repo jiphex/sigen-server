@@ -20,15 +20,61 @@ fn severity(id: Id, readings: Option<&crate::model::Readings>) -> Severity {
     // so it is not itself evidence of physical danger.
     let dangerous = readings.is_some_and(|r| match id {
         // Insulation, overheating, PV overvoltage/reversal/back-feed, arc, DC current.
-        Id::InverterFault => r.alarms[0] & 0x81e6 != 0 || r.alarms[1] & 0x0101 != 0,
+        Id::InverterFault => {
+            (r.alarms[0] | r.plant_alarms[0]) & 0x81e6 != 0
+                || (r.alarms[1] | r.plant_alarms[1]) & 0x0101 != 0
+        }
         // Battery overheating or thermal runaway.
-        Id::BatteryAlarm => r.alarms[2] & 0x0044 != 0,
+        Id::BatteryAlarm => (r.alarms[2] | r.plant_alarms[2]) & 0x0044 != 0,
+        Id::GatewayAlarm => (r.alarms[3] | r.plant_alarms[3]) & 0xff != 0,
+        Id::DcChargerAlarm => (r.alarms[4] | r.plant_alarms[4]) & 0x3f != 0,
+        Id::AcChargerAlarm => r
+            .ac_charger_alarms
+            .values()
+            .any(|a| a[0] & 0x1ff != 0 || a[1] & 0x1f != 0 || a[2] & 3 != 0),
         _ => false,
     });
     if dangerous {
         Severity::Critical
     } else {
         Severity::High
+    }
+}
+
+fn vendor_severity(id: Id, r: &crate::model::Readings) -> Option<&'static str> {
+    let a: [u16; 5] = std::array::from_fn(|i| r.alarms[i] | r.plant_alarms[i]);
+    let (critical, general, unknown) = match id {
+        Id::InverterFault => (
+            a[0] & 0xffef != 0 || a[1] & 0x03bd != 0,
+            a[0] & 0x10 != 0 || a[1] & 2 != 0,
+            a[1] & !0x03bf != 0,
+        ),
+        Id::BatteryAlarm => (a[2] & 0x7d != 0, a[2] & 2 != 0, a[2] & !0x7f != 0),
+        Id::GatewayAlarm => (a[3] & 0xff != 0, false, a[3] & !0xff != 0),
+        Id::DcChargerAlarm => (a[4] & 0x3f != 0, false, a[4] & !0x3f != 0),
+        Id::AcChargerAlarm => {
+            let mut a = [0_u16; 3];
+            for words in r.ac_charger_alarms.values() {
+                for i in 0..3 {
+                    a[i] |= words[i];
+                }
+            }
+            (
+                a[0] & 0x1ff != 0 || a[1] & 0x1f != 0 || a[2] & 3 != 0,
+                a[1] & 0x20 != 0 || a[2] & 4 != 0,
+                a[0] & !0x1ff != 0 || a[1] & !0x3f != 0 || a[2] & !7 != 0,
+            )
+        }
+        _ => return None,
+    };
+    if critical {
+        Some("critical")
+    } else if unknown {
+        Some("unknown")
+    } else if general {
+        Some("general")
+    } else {
+        None
     }
 }
 
@@ -40,14 +86,20 @@ pub enum Id {
     BatteryAlarm,
     GridDisconnected,
     ControlFailed,
+    GatewayAlarm,
+    DcChargerAlarm,
+    AcChargerAlarm,
 }
 impl Id {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 8] = [
         Self::HardwareOffline,
         Self::InverterFault,
         Self::BatteryAlarm,
         Self::GridDisconnected,
         Self::ControlFailed,
+        Self::GatewayAlarm,
+        Self::DcChargerAlarm,
+        Self::AcChargerAlarm,
     ];
     pub fn key(self) -> &'static str {
         match self {
@@ -56,6 +108,9 @@ impl Id {
             Self::BatteryAlarm => "battery_alarm",
             Self::GridDisconnected => "grid_disconnected",
             Self::ControlFailed => "control_failed",
+            Self::GatewayAlarm => "gateway_alarm",
+            Self::DcChargerAlarm => "dc_charger_alarm",
+            Self::AcChargerAlarm => "ac_charger_alarm",
         }
     }
     fn name(self) -> &'static str {
@@ -65,6 +120,9 @@ impl Id {
             Self::BatteryAlarm => "Battery alarm",
             Self::GridDisconnected => "Grid disconnected",
             Self::ControlFailed => "Control failed",
+            Self::GatewayAlarm => "Gateway alarm",
+            Self::DcChargerAlarm => "DC charger alarm",
+            Self::AcChargerAlarm => "AC charger alarm",
         }
     }
 }
@@ -77,6 +135,9 @@ pub struct Settings {
     pub battery_alarm: bool,
     pub grid_disconnected: bool,
     pub control_failed: bool,
+    pub gateway_alarm: bool,
+    pub dc_charger_alarm: bool,
+    pub ac_charger_alarm: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -86,6 +147,9 @@ impl Default for Settings {
             battery_alarm: true,
             grid_disconnected: true,
             control_failed: true,
+            gateway_alarm: true,
+            dc_charger_alarm: true,
+            ac_charger_alarm: true,
         }
     }
 }
@@ -97,6 +161,9 @@ impl Settings {
             Id::BatteryAlarm => self.battery_alarm,
             Id::GridDisconnected => self.grid_disconnected,
             Id::ControlFailed => self.control_failed,
+            Id::GatewayAlarm => self.gateway_alarm,
+            Id::DcChargerAlarm => self.dc_charger_alarm,
+            Id::AcChargerAlarm => self.ac_charger_alarm,
         }
     }
     fn set(&mut self, id: Id, enabled: bool) {
@@ -106,6 +173,9 @@ impl Settings {
             Id::BatteryAlarm => &mut self.battery_alarm,
             Id::GridDisconnected => &mut self.grid_disconnected,
             Id::ControlFailed => &mut self.control_failed,
+            Id::GatewayAlarm => &mut self.gateway_alarm,
+            Id::DcChargerAlarm => &mut self.dc_charger_alarm,
+            Id::AcChargerAlarm => &mut self.ac_charger_alarm,
         } = enabled;
     }
 }
@@ -117,6 +187,7 @@ pub struct Alert {
     pub enabled: bool,
     pub active: bool,
     pub severity: Severity,
+    pub vendor_severity: Option<&'static str>,
     /// False when hardware data is unavailable; previously active alerts remain latched.
     pub known: bool,
     pub since_unix: Option<u64>,
@@ -152,6 +223,7 @@ impl Alerts {
                     enabled: settings.enabled(id),
                     active: false,
                     severity: Severity::High,
+                    vendor_severity: None,
                     known: false,
                     since_unix: None,
                 })
@@ -212,16 +284,24 @@ pub fn refresh(status: &mut Status, now: u64) {
     let conditions = [
         Some(offline),
         r.map(|r| {
-            r.alarms[0] != 0
-                || r.alarms[1] != 0
+            (r.alarms[0] | r.plant_alarms[0]) != 0
+                || (r.alarms[1] | r.plant_alarms[1]) != 0
                 || [r.plant_state.as_str(), r.inverter_state.as_str()]
                     .iter()
                     .any(|s| matches!(*s, "Fault" | "Environmental abnormality"))
         }),
         // Battery ESS alarms are group 3 (V2.7 appendix 4), not PCS/gateway/charger alarms.
-        r.map(|r| r.alarms[2] != 0),
+        r.map(|r| (r.alarms[2] | r.plant_alarms[2]) != 0),
         r.map(|r| !r.grid_connected),
         Some(status.last_control_error.is_some()),
+        r.map(|r| (r.alarms[3] | r.plant_alarms[3]) != 0),
+        r.map(|r| (r.alarms[4] | r.plant_alarms[4]) != 0),
+        r.filter(|r| !r.ac_charger_alarms.is_empty()).map(|r| {
+            r.ac_charger_alarms
+                .values()
+                .flatten()
+                .any(|bits| *bits != 0)
+        }),
     ];
     let severities = Id::ALL.map(|id| severity(id, r));
     for ((alert, condition), severity) in status
@@ -231,6 +311,9 @@ pub fn refresh(status: &mut Status, now: u64) {
         .zip(conditions)
         .zip(severities)
     {
+        if let Some(readings) = r {
+            alert.vendor_severity = vendor_severity(alert.id, readings);
+        }
         alert.enabled = status.alerts.settings.enabled(alert.id);
         alert.known = !alert.enabled || condition.is_some();
         let active = alert.enabled && condition.unwrap_or(alert.active);
@@ -249,7 +332,7 @@ pub fn refresh(status: &mut Status, now: u64) {
                 serde_json::json!({"alert":alert.id, "name":alert.name,"severity":if active { next_severity } else { alert.severity },
                     "since_unix":if active && !alert.active { Some(now) } else { alert.since_unix },
                     "duration_seconds":if !active { alert.since_unix.map(|t| now.saturating_sub(t)) } else { None },
-                    "alarms":r.map(|r| r.alarms)}),
+                    "vendor_severity":alert.vendor_severity, "ac_charger_alarms":r.map(|r| &r.ac_charger_alarms), "plant_alarms":r.map(|r| r.plant_alarms), "alarms":r.map(|r| r.alarms)}),
             ));
             if alert.enabled
                 && (active || alert.known)
@@ -338,7 +421,7 @@ mod tests {
     use std::sync::{Arc, RwLock};
     fn readings() -> Readings {
         Readings {
-            grid_power_watts: 0.0,
+            grid_power_watts: Some(0.0),
             plant_power_watts: 0.0,
             pv_power_watts: 0.0,
             battery_power_watts: 0.0,
@@ -363,6 +446,8 @@ mod tests {
             plant_state: "Running".into(),
             inverter_state: "Running".into(),
             alarms: [0; 5],
+            plant_alarms: [0; 5],
+            ac_charger_alarms: Default::default(),
         }
     }
     fn healthy() -> Status {
@@ -376,6 +461,69 @@ mod tests {
     }
     fn alert(s: &Status, id: Id) -> &Alert {
         s.alerts.items.iter().find(|a| a.id == id).unwrap()
+    }
+
+    #[test]
+    fn ac_charger_alerts_preserve_source_and_vendor_severity() {
+        let mut s = healthy();
+        refresh(&mut s, 100);
+        assert!(!alert(&s, Id::AcChargerAlarm).known);
+        for (words, severity) in [
+            ([1, 0, 0], "critical"),
+            ([0, 32, 0], "general"),
+            ([0, 0, 4], "general"),
+            ([0, 0, 0x8000], "unknown"),
+        ] {
+            s.readings
+                .as_mut()
+                .unwrap()
+                .ac_charger_alarms
+                .insert(2, words);
+            refresh(&mut s, 101);
+            assert!(alert(&s, Id::AcChargerAlarm).active);
+            assert_eq!(
+                alert(&s, Id::AcChargerAlarm).vendor_severity,
+                Some(severity)
+            );
+        }
+        s.readings
+            .as_mut()
+            .unwrap()
+            .ac_charger_alarms
+            .insert(2, [0; 3]);
+        refresh(&mut s, 102);
+        assert!(!alert(&s, Id::AcChargerAlarm).active);
+    }
+
+    #[test]
+    fn aggregate_alarms_cover_each_group_and_unknown_bits() {
+        for (group, id) in [
+            (0, Id::InverterFault),
+            (1, Id::InverterFault),
+            (2, Id::BatteryAlarm),
+            (3, Id::GatewayAlarm),
+            (4, Id::DcChargerAlarm),
+        ] {
+            let mut s = healthy();
+            s.readings.as_mut().unwrap().plant_alarms[group] = 1;
+            refresh(&mut s, 100);
+            assert!(alert(&s, id).active);
+            assert_eq!(alert(&s, id).vendor_severity, Some("critical"));
+            s.readings.as_mut().unwrap().plant_alarms[group] = 0;
+            refresh(&mut s, 101);
+            assert!(!alert(&s, id).active);
+        }
+        let mut s = healthy();
+        s.readings.as_mut().unwrap().plant_alarms[4] = 0x8000;
+        refresh(&mut s, 100);
+        assert!(alert(&s, Id::DcChargerAlarm).active);
+        assert_eq!(
+            alert(&s, Id::DcChargerAlarm).vendor_severity,
+            Some("unknown")
+        );
+        s.readings.as_mut().unwrap().alarms[2] = 2;
+        refresh(&mut s, 101);
+        assert_eq!(alert(&s, Id::BatteryAlarm).vendor_severity, Some("general"));
     }
 
     #[tokio::test]
@@ -493,7 +641,12 @@ mod tests {
     fn device_alerts_trigger_recover_and_do_not_mistake_other_alarm_groups_for_battery() {
         let mut s = healthy();
         refresh(&mut s, 100);
-        assert!(s.alerts.items.iter().all(|a| !a.active && a.known));
+        assert!(
+            s.alerts
+                .items
+                .iter()
+                .all(|a| !a.active && (a.known || a.id == Id::AcChargerAlarm))
+        );
         let r = s.readings.as_mut().unwrap();
         r.inverter_state = "Fault".into();
         r.grid_connected = false;

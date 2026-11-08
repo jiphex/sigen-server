@@ -138,10 +138,9 @@ confirms standby, then enables EMS and confirms both settings. It does not
 resume a previously stored forced charge/discharge or PCS dispatch mode.
 An enable request while EMS is already enabled preserves the current mode.
 Mode changes require remote EMS to be enabled. Disabling it returns control to
-the device's energy management. Charging/discharging modes use existing device
-limits; this interface does not set charging or discharging power limits.
-PCS mode activates existing dispatch settings. Verify these device settings
-before selecting a mode. The server must be the only external Modbus controller;
+the device's energy management. Only standby (1) and maximum self-consumption (2) can be selected.
+PCS dispatch (0) and forced modes (3–6) are rejected before any Modbus request: no
+commissioned operating envelope exists to validate their inherited targets and limits. The server must be the only external Modbus controller;
 read/write/readback sequences cannot prevent another controller changing them.
 
 | Environment variable | Default | Purpose |
@@ -150,12 +149,15 @@ read/write/readback sequences cannot prevent another controller changing them.
 | `SIGEN_UNIT_ID` | `1` | Configured inverter ID, 1–246 |
 | `SIGEN_BIND` | `127.0.0.1:3000` | HTTP listening address |
 | `SIGEN_POLL_SECONDS` | `15` | Delay after each complete poll, 1–3600 seconds |
+| `SIGEN_MODBUS_REQUEST_INTERVAL_MS` | `1000` | Shared request spacing, 1000–10000 ms |
+| `SIGEN_MODBUS_RESPONSE_TIMEOUT_MS` | `1000` | Complete response deadline, 1000–10000 ms |
+| `SIGEN_MODBUS_CONNECT_TIMEOUT_MS` | `1000` | Connection deadline, 1000–10000 ms |
 | `SIGEN_READ_FUNCTION` | `4` | Telemetry read function, 3 or 4; see the Modbus crate's function-code notes |
 
-Each poll takes about 12–13 seconds because Modbus requests must be spaced one
+Each poll takes about 14–15 seconds because Modbus requests must be spaced one
 second apart. The dashboard refreshes the cached state every three seconds.
 Scrapes and status requests don't trigger hardware traffic. The first complete
-reading appears after about 13 seconds. Polls are not atomic snapshots.
+reading appears after about 15 seconds. Polls are not atomic snapshots.
 
 Optional dashboard groups are read one request at a time during the gap between
 core polls. Energy groups refresh at most once every five minutes; electrical
@@ -164,9 +166,9 @@ only run when there is enough time before the next core poll for request pacing
 and a complete response. Very short `--poll-seconds` settings can leave no time
 for optional reads. Queued commands are checked before starting another optional
 read; an already-started read completes before a new command is processed.
-Unsupported groups (Modbus exceptions 1–3) are marked unavailable until restart
-without failing the core poll. Other device exceptions are retried on the next
-optional interval; transport/protocol failures invalidate controls and reconnect.
+All device exceptions are retried on the next optional interval. Exception 2
+marks the register unavailable for that attempt; exceptions 1/3 remain request
+errors, not permanent capability decisions. Firmware changes clear cached details; transport/protocol failures invalidate controls and reconnect.
 An offline, failed or old optional sample is labeled **Last known**, independently
 of the core sample age. Daily energy older than ten minutes and electrical data
 older than two minutes use that label even while the core connection is healthy.
@@ -242,8 +244,8 @@ curl -X POST http://127.0.0.1:3000/api/control \
   -d '{"action":"backup_soc","percent":20.0}'
 ```
 
-EMS modes: 0 PCS remote control, 1 standby, 2 maximum self-consumption,
-3 charge/grid first, 4 charge/PV first, 5 discharge/PV first, 6 discharge/ESS first.
+Selectable EMS modes: 1 standby and 2 maximum self-consumption.
+Existing device modes 0 and 3–6 are displayed but cannot be selected.
 Backup reserve accepts 0–100%, rounded to 0.1%.
 
 ## Prometheus
@@ -686,3 +688,58 @@ returns an error with an uncertain hardware outcome; writes are never retried.
 Logging is synchronous on the dedicated hardware thread. The file grows by
 appending; manage retention externally. After renaming the file for rotation,
 restart the server to reopen the configured path.
+
+
+### Safety behavior after the November review
+
+The server uses a hybrid capability profile: core battery, plant alarm and control
+readbacks must succeed before controls become available. Unsupported core registers
+produce an offline error identifying the compatibility requirement. It does not
+claim PV-only inverter support; AC chargers require explicit configured IDs. Unknown running states and invalid
+core percentages/extrema fail the poll; cached readings are marked stale.
+A missing grid sensor exports `grid_power_watts: null` in HTTP/MQTT and omits its
+Prometheus metric. Optional groups have their own validity and retry intervals.
+
+Plant alarm words are polled separately from the selected inverter and exposed as
+`readings.plant_alarms`. Alerts combine both sources, including dedicated gateway
+and DC-charger conditions. Unknown bits remain visible and trigger the relevant
+alert. AC-charger alarms are monitored for explicitly configured charger IDs.
+`vendor_severity` preserves the vendor classification independently of notification
+`severity`, which remains application priority. Event records retain both alarm sources.
+
+Enabling EMS additionally requires observed plant EMS work mode 7. A mismatch or
+read failure reports an uncertain operational outcome without retry or rollback.
+Successful responses describe `confirmation: setting_readback` and
+`electrical_output_verified: false`. Physical power flow is not verified.
+Slower transport settings extend core freshness deadlines to accommodate a full
+poll; commands still expire after 60 seconds and may therefore time out on slow links.
+
+
+### Supported hardware and AC-charger coverage
+
+On initial connection and reconnect, model identification must match a supported
+hybrid family: SigenStor, Sigen Hybrid, Sigen PV HYA, or PG Controller. Unknown,
+empty, PV-only and charger model identities are rejected before core polling.
+This family check is a compatibility gate, not device authentication or proof of
+firmware support; the required core register reads must also succeed. Unsupported
+hardware is reported offline rather than being silently treated as hybrid hardware.
+
+Set `--ac-charger-units 2,3` / `SIGEN_AC_CHARGER_UNITS=2,3` to monitor AC chargers.
+Up to four distinct IDs in 1–246 are supported; none may equal the inverter ID.
+No addresses are scanned automatically. Configure the IDs assigned to actual EVAC
+devices. Each configured charger adds one paced read per core poll. Alarm words
+are exposed in `readings.ac_charger_alarms`, keyed by unit ID, and trigger the
+AC-charger alert with separate vendor severity. A configured charger that cannot
+be read fails the complete poll so its absence cannot be reported as healthy.
+Without configured charger IDs, AC coverage remains unknown, not clear.
+
+HTTP/MQTT electrical arrays use null for inapplicable phases, matching Prometheus
+omission. Unknown output types withhold the electrical sample and report the raw
+output-type value in its error; the internal raw sample remains available for
+subsequent diagnosis. No undocumented physical limits are guessed.
+
+Dispatch modes 0 and 3–6 are unsupported server operations and remain rejected
+before I/O. Adding commissioned dispatch is a separate feature requiring explicit
+operating envelopes and validation; this version has no bypass switch. The raw
+Modbus library remains a lower-level API with caller-managed control policy.
+See [COMMISSIONING.md](../../COMMISSIONING.md) for remaining installation verification.

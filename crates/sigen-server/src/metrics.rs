@@ -131,10 +131,15 @@ pub fn render(s: &Status) -> String {
                     );
                 };
             }
-            gauge!(
-                grid_power_watts,
-                "Grid power: positive import, negative export."
-            );
+            if let Some(power) = r.grid_power_watts.filter(|_| r.grid_sensor_connected) {
+                metric(
+                    &mut out,
+                    "sigen_grid_power_watts",
+                    "Grid power: positive import, negative export.",
+                    "gauge",
+                    power,
+                );
+            }
             gauge!(plant_power_watts, "Plant active power.");
             gauge!(pv_power_watts, "Plant solar generation power.");
             gauge!(
@@ -204,6 +209,15 @@ pub fn render(s: &Status) -> String {
             out.push_str("# HELP sigen_alarm_bits Raw alarm bitfields by group (1 through 5).\n# TYPE sigen_alarm_bits gauge\n");
             for (index, bits) in r.alarms.iter().enumerate() {
                 writeln!(out, "sigen_alarm_bits{{group=\"{}\"}} {bits}", index + 1).unwrap();
+            }
+            out.push_str("# HELP sigen_plant_alarm_bits Aggregate plant alarm bitfields.\n# TYPE sigen_plant_alarm_bits gauge\n");
+            for (index, bits) in r.plant_alarms.iter().enumerate() {
+                writeln!(
+                    out,
+                    "sigen_plant_alarm_bits{{group=\"{}\"}} {bits}",
+                    index + 1
+                )
+                .unwrap();
             }
         }
         if let Some(c) = &s.controls {

@@ -297,7 +297,7 @@ fn command_result(
     let payload = match result {
         Ok(controls) => {
             tracing::info!("MQTT command confirmed");
-            json!({"confirmed":true,"controls":controls})
+            json!({"confirmed":true,"confirmation":"setting_readback", "electrical_output_verified":false,"controls":controls})
         }
         Err(error) => {
             tracing::warn!(%error, "MQTT command failed or was rejected");

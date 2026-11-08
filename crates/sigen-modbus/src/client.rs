@@ -140,6 +140,11 @@ pub trait WriteAuditor: fmt::Debug + Send + Sync {
 }
 
 impl Client {
+    /// Configured function for read-only device telemetry.
+    pub fn telemetry_function(&self) -> ReadFunction {
+        self.config.telemetry_function
+    }
+
     pub fn set_write_auditor(&mut self, auditor: std::sync::Arc<dyn WriteAuditor>) {
         self.auditor = Some(auditor);
     }

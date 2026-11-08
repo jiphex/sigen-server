@@ -4,6 +4,7 @@ use sigen_modbus::{Battery, DeviceInfo, Inverter, Plant, RunningState};
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
     pub read_only: bool,
+    pub ac_charger_units: Vec<u8>,
     pub server_version: &'static str,
     pub journal: Option<crate::journal::Journal>,
     #[serde(skip)]
@@ -40,6 +41,7 @@ impl Status {
     pub fn new(target: String, unit: u8) -> Self {
         Self {
             read_only: false,
+            ac_charger_units: Vec::new(),
             server_version: env!("CARGO_PKG_VERSION"),
             journal: None,
             journal_connected: None,
@@ -121,6 +123,13 @@ impl Status {
     /// Hide expired controls in API responses while retaining readings for stale-data display.
     pub fn snapshot(&self) -> Self {
         let mut snapshot = self.clone();
+        snapshot.details = self.details.for_export(
+            crate::hardware::now(),
+            self.device_day,
+            self.readings
+                .as_ref()
+                .is_some_and(|r| r.grid_sensor_connected),
+        );
         if !self.fresh() {
             snapshot.online = false;
             snapshot.controls = None;
@@ -167,9 +176,9 @@ pub struct Controls {
     pub backup_soc_percent: f64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct Readings {
-    pub grid_power_watts: f64,
+    pub grid_power_watts: Option<f64>,
     pub plant_power_watts: f64,
     pub pv_power_watts: f64,
     pub battery_power_watts: f64,
@@ -194,11 +203,13 @@ pub struct Readings {
     pub plant_state: String,
     pub inverter_state: String,
     pub alarms: [u16; 5],
+    pub plant_alarms: [u16; 5],
+    pub ac_charger_alarms: std::collections::BTreeMap<u8, [u16; 3]>,
 }
 impl Readings {
     pub fn new(p: Plant, i: Inverter, b: Battery) -> Self {
         Self {
-            grid_power_watts: p.grid_power_kw * 1000.0,
+            grid_power_watts: p.grid_sensor_connected.then_some(p.grid_power_kw * 1000.0),
             plant_power_watts: p.active_power_kw * 1000.0,
             pv_power_watts: p.pv_power_kw * 1000.0,
             battery_power_watts: p.battery_power_kw * 1000.0,
@@ -223,6 +234,8 @@ impl Readings {
             plant_state: state_name(p.running_state),
             inverter_state: state_name(i.running_state),
             alarms: b.alarms,
+            plant_alarms: [0; 5],
+            ac_charger_alarms: Default::default(),
         }
     }
 }

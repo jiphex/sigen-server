@@ -40,9 +40,21 @@ pub struct Cli {
     /// Inverter unit ID
     #[arg(long, env = "SIGEN_UNIT_ID", default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=246))]
     pub unit_id: u8,
+    /// AC charger slave IDs to monitor (up to four, comma separated)
+    #[arg(long, env = "SIGEN_AC_CHARGER_UNITS", value_delimiter = ',', value_parser = clap::value_parser!(u8).range(1..=246))]
+    pub ac_charger_units: Vec<u8>,
     /// Delay between complete hardware polls
     #[arg(long, env = "SIGEN_POLL_SECONDS", default_value_t = 15, value_parser = clap::value_parser!(u64).range(1..=3600))]
     pub poll_seconds: u64,
+    /// Minimum delay between all Modbus requests (milliseconds)
+    #[arg(long, env = "SIGEN_MODBUS_REQUEST_INTERVAL_MS", default_value_t = 1000, value_parser = clap::value_parser!(u64).range(1000..=10000))]
+    pub modbus_request_interval_ms: u64,
+    /// Complete Modbus response timeout (milliseconds)
+    #[arg(long, env = "SIGEN_MODBUS_RESPONSE_TIMEOUT_MS", default_value_t = 1000, value_parser = clap::value_parser!(u64).range(1000..=10000))]
+    pub modbus_response_timeout_ms: u64,
+    /// Modbus connection timeout (milliseconds)
+    #[arg(long, env = "SIGEN_MODBUS_CONNECT_TIMEOUT_MS", default_value_t = 1000, value_parser = clap::value_parser!(u64).range(1000..=10000))]
+    pub modbus_connect_timeout_ms: u64,
     /// Modbus telemetry read function
     #[arg(long, env = "SIGEN_READ_FUNCTION", default_value_t = 4, value_parser = clap::value_parser!(u8).range(3..=4))]
     pub read_function: u8,
@@ -159,6 +171,21 @@ mod tests {
             .try_get_matches_from(args)?;
         Cli::from_arg_matches(&matches)
     }
+    #[test]
+    fn transport_limits_are_bounded() {
+        for (flag, invalid) in [
+            ("--modbus-request-interval-ms", "999"),
+            ("--modbus-request-interval-ms", "10001"),
+            ("--modbus-response-timeout-ms", "0"),
+            ("--modbus-connect-timeout-ms", "10001"),
+        ] {
+            assert!(
+                Cli::try_parse_from(["sigen-server", "--address", "127.0.0.1:502", flag, invalid])
+                    .is_err()
+            );
+        }
+    }
+
     #[test]
     fn defaults_help_and_version() {
         Cli::command().debug_assert();

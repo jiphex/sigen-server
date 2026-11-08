@@ -918,3 +918,27 @@ fn invalid_optional_read_arguments_send_no_requests() {
     assert_eq!(client.read_daily_load_energy().unwrap(), 1);
     worker.join().unwrap();
 }
+
+#[test]
+fn invalid_core_measurements_are_rejected() {
+    let (mut client, worker) = mock(|mut stream| {
+        let mut plant = [0; 15];
+        plant[14] = 1001;
+        registers(&mut stream, 247, 30000, &plant);
+        registers(&mut stream, 247, 30031, &[0; 8]);
+        registers(&mut stream, 247, 30051, &[1]);
+    });
+    assert!(matches!(client.read_plant(), Err(Error::Protocol(_))));
+    worker.join().unwrap();
+    let (mut client, worker) = mock(|mut stream| {
+        let mut battery = [0; 19];
+        battery[11] = 1001;
+        registers(&mut stream, 1, 30591, &battery);
+        registers(&mut stream, 1, 30620, &[0; 4]);
+    });
+    assert!(matches!(
+        client.read_battery(UnitId::inverter(1).unwrap()),
+        Err(Error::Protocol(_))
+    ));
+    worker.join().unwrap();
+}

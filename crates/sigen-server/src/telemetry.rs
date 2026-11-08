@@ -46,10 +46,11 @@ impl<T> Sample<T> {
                 self.updated_unix = Some(now());
                 self.device_day = day;
                 self.last_error = None;
+                self.unsupported = false;
                 false
             }
             Err(error) => {
-                self.unsupported = matches!(error, Error::Exception(1..=3));
+                self.unsupported = matches!(error, Error::Exception(2));
                 // Device exceptions leave the TCP connection usable.
                 let disconnected = matches!(
                     error,
@@ -67,13 +68,33 @@ pub struct DailyBattery {
     pub charge_kwh: f64,
     pub discharge_kwh: f64,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Electrical {
     pub output_type: u16,
     pub phase_voltage_volts: [f64; 3],
     pub phase_current_amps: [f64; 3],
     pub power_factor: f64,
 }
+impl Serialize for Electrical {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let volts: [Option<f64>; 3] = std::array::from_fn(|i| {
+            (self.output_type == 2 || (self.output_type == 0 && i == 0))
+                .then_some(self.phase_voltage_volts[i])
+        });
+        let amps: [Option<f64>; 3] = std::array::from_fn(|i| {
+            (matches!(self.output_type, 1 | 2) || (self.output_type == 0 && i == 0))
+                .then_some(self.phase_current_amps[i])
+        });
+        let mut out = serializer.serialize_struct("Electrical", 4)?;
+        out.serialize_field("output_type", &self.output_type)?;
+        out.serialize_field("phase_voltage_volts", &volts)?;
+        out.serialize_field("phase_current_amps", &amps)?;
+        out.serialize_field("power_factor", &self.power_factor)?;
+        out.end()
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct PhasePower {
     pub active_watts: [f64; 3],
@@ -117,6 +138,13 @@ impl Details {
         details
             .grid_phases
             .retain_current(timestamp, 120, day, false);
+        if let Some(e) = &details.electrical.value
+            && e.output_type > 3
+        {
+            details.electrical.last_error =
+                Some(format!("Invalid electrical output type: {}", e.output_type));
+            details.electrical.value = None;
+        }
         if !grid_connected {
             details.grid_phases.value = None;
         }
@@ -163,23 +191,9 @@ impl Poller {
             return false;
         };
         self.cursor = (index + 1) % 7;
-        // Disable only the unsupported group; retain other optional/core readings.
-        let unsupported = {
-            let s = status.read().expect("status lock");
-            match index {
-                0 => s.details.pv_daily_kwh.unsupported,
-                1 => s.details.load_daily_kwh.unsupported,
-                2 => s.details.battery_daily.unsupported,
-                3 => s.details.grid_import.unsupported,
-                4 => s.details.grid_export.unsupported,
-                5 => s.details.electrical.unsupported,
-                _ => s.details.grid_phases.unsupported,
-            }
-        };
+        // Reprobe unavailable groups at the normal bounded interval. An exception
+        // is evidence about this request, never a permanent capability verdict.
         self.due[index] = started + Duration::from_secs(if index >= 5 { 60 } else { 300 });
-        if unsupported {
-            return false;
-        }
         let day = status.read().expect("status lock").device_day;
         // Complete the blocking read before taking the write lock.
         macro_rules! read {
@@ -308,6 +322,44 @@ mod tests {
         sync::{Arc, RwLock},
         thread,
     };
+
+    #[test]
+    fn electrical_exports_mask_inapplicable_phases_and_reject_unknown_wiring() {
+        let mut details = test_details(1000, 20000);
+        for output in 0..=3 {
+            details.electrical.value.as_mut().unwrap().output_type = output;
+            let exported = details.for_export(1000, Some(20000), true);
+            let json = serde_json::to_value(exported).unwrap();
+            for i in 0..3 {
+                assert_eq!(
+                    json["electrical"]["value"]["phase_voltage_volts"][i].is_number(),
+                    output == 2 || (output == 0 && i == 0)
+                );
+                assert_eq!(
+                    json["electrical"]["value"]["phase_current_amps"][i].is_number(),
+                    matches!(output, 1 | 2) || (output == 0 && i == 0)
+                );
+            }
+        }
+        details.electrical.value.as_mut().unwrap().output_type = 65535;
+        let exported = details.for_export(1000, Some(20000), true);
+        assert!(exported.electrical.value.is_none());
+        assert!(exported.electrical.last_error.unwrap().contains("65535"));
+        assert_eq!(details.electrical.value.unwrap().output_type, 65535);
+    }
+
+    #[test]
+    fn temporary_exceptions_do_not_become_permanent_capability_decisions() {
+        for code in [1, 2, 3] {
+            let mut sample = Sample::<u32>::default();
+            assert!(!sample.record(Err(Error::Exception(code)), None));
+            assert_eq!(sample.unsupported, code == 2);
+            assert!(!sample.record(Ok(42), None));
+            assert_eq!(sample.value, Some(42));
+            assert!(!sample.unsupported);
+            assert!(sample.last_error.is_none());
+        }
+    }
 
     #[test]
     fn exports_filter_samples_independently_and_preserve_diagnostics_and_cache() {
@@ -467,6 +519,7 @@ mod tests {
     fn optional_reads_wait_for_core_poll_budget_and_unsupported_groups_are_skipped() {
         let (mut client, worker) = mock(vec![
             (1, 31509, 4, vec![0x84, 2]),
+            (1, 31509, 4, words(&[0, 100, 0, 200])),
             (247, 30092, 2, words(&[0, 123])),
         ]);
         let shared = shared();
@@ -488,7 +541,8 @@ mod tests {
         assert!(shared.read().unwrap().fresh());
         poller.cursor = 0;
         poller.due[0] = Instant::now();
-        assert!(!poll(&mut poller, &mut client, &shared)); // no second unsupported request
+        assert!(!poll(&mut poller, &mut client, &shared)); // reprobe succeeds
+        assert!(!shared.read().unwrap().details.pv_daily_kwh.unsupported);
         assert!(!poll(&mut poller, &mut client, &shared)); // load still works
         assert_eq!(
             shared.read().unwrap().details.load_daily_kwh.value,

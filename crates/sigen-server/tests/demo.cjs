@@ -98,6 +98,11 @@ function dashboard(search, fetch) {
   const document = {};
   const nodes = Object.fromEntries([...fs.readFileSync(path.join(staticDir, 'index.html'), 'utf8')
     .matchAll(/<([a-z][\w-]*)\b[^>]*\bid="([^"]+)"/g)].map(match => [match[2], element(match[1], document)]));
+  const html = fs.readFileSync(path.join(staticDir, 'index.html'), 'utf8');
+  for (const match of html.matchAll(/<select[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g)) {
+    nodes[match[1]].options = [...match[2].matchAll(/<option value="([^"]+)"([^>]*)>([^<]*)<\/option>/g)]
+      .map(option => ({value: option[1], disabled: option[2].includes('disabled'), textContent: option[3]}));
+  }
   Object.assign(document, {getElementById: id => nodes[id], body: element('body', document),
     createElement: tag => element(tag, document), createElementNS: (_, tag) => element(tag, document),
     createTextNode: text => ({nodeType: 3, textContent: text})});
@@ -411,4 +416,19 @@ test('demo metrics include optional groups and omit expired or previous-day meas
   assert.match(out, /sigen_grid_import_energy_kwh_total/);
   s.online = false;
   assert.doesNotMatch(context.renderDemoMetrics(s), /sigen_grid_import_energy_kwh_total/);
+});
+
+
+test('dispatch choices are disabled and missing grid power is unavailable', () => {
+  const ui = dashboard('?demo=1', () => { throw new Error('Unexpected request'); });
+  assert.deepEqual(ui.nodes.mode.options.filter(option => !option.disabled).map(option => option.value), ['1', '2']);
+  const status = simulator().snapshot();
+  status.readings.grid_sensor_connected = false;
+  status.readings.grid_power_watts = null;
+  status.readings.plant_alarms = [0, 0, 0, 1, 0];
+  ui.context.nextStatus = status;
+  vm.runInContext('display(nextStatus)', ui.context);
+  assert.equal(ui.nodes.grid.textContent, '—');
+  assert.equal(ui.nodes['grid-direction'].textContent, 'Grid sensor unavailable');
+  assert.match(ui.nodes['plant-alarms'].textContent, /0, 0, 0, 1, 0/);
 });

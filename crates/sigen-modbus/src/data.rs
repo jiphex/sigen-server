@@ -109,6 +109,9 @@ impl Client {
         let a = self.telemetry(UnitId::PLANT, 30000, 15)?;
         let b = self.telemetry(UnitId::PLANT, 30031, 8)?;
         let state = self.telemetry(UnitId::PLANT, 30051, 1)?;
+        if a[4] > 1 || a[9] > 2 || a[14] > 1000 {
+            return Err(Error::Protocol("invalid plant sensor/grid status or SOC"));
+        }
         Ok(Plant {
             epoch_seconds: u32_at(&a, 0),
             timezone_offset_minutes: a[2] as i16,
@@ -162,6 +165,13 @@ impl Client {
         require_inverter(unit)?;
         let r = self.telemetry(unit, 30591, 19)?;
         let extremes = self.telemetry(unit, 30620, 4)?;
+        if r[10] > 1000
+            || r[11] > 1000
+            || (extremes[0] as i16) < (extremes[1] as i16)
+            || extremes[2] < extremes[3]
+        {
+            return Err(Error::Protocol("invalid battery percentage or extrema"));
+        }
         Ok(Battery {
             max_charge_power_kw: unsigned(&r, 0, 1000.0),
             max_discharge_power_kw: unsigned(&r, 2, 1000.0),

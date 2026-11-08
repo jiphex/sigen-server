@@ -221,7 +221,7 @@ async fn control(
     })?;
     match tokio::time::timeout(Duration::from_secs(60), response).await {
         Ok(Ok(Ok(controls))) => {
-            Ok(Json(json!({"confirmed": true, "controls": controls})).into_response())
+            Ok(Json(json!({"confirmed": true, "confirmation":"setting_readback", "electrical_output_verified":false, "controls": controls})).into_response())
         }
         Ok(Ok(Err(e))) => Err(error(StatusCode::BAD_GATEWAY, e)),
         Ok(Err(_)) => Err(error(

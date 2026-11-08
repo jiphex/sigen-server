@@ -157,7 +157,7 @@ pub fn payload(config: &Config, status: &Status) -> Value {
         mode_availability.as_array_mut().unwrap().push(json!({"topic":format!("{}/state",config.prefix),
             "value_template":"{{ 'online' if value_json.controls is not none and value_json.controls.remote_ems_enabled else 'offline' }}"}));
         components.insert("ems_mode".into(),json!({"platform":"select","name":"Plant remote EMS mode","unique_id":format!("{}_ems_mode",config.id),
-            "command_topic":format!("{}/command/ems_mode",config.prefix),"options":MODES,"optimistic":false,"retain":false,"entity_category":"config",
+            "command_topic":format!("{}/command/ems_mode",config.prefix),"options":&MODES[1..=2],"optimistic":false,"retain":false,"entity_category":"config",
             "value_template":format!("{{{{ {}[value_json.controls.remote_ems_mode] if value_json.controls is not none and value_json.controls.remote_ems_mode < 7 else none }}}}",serde_json::to_string(&MODES).unwrap()),
             "availability":mode_availability,"availability_mode":"all"}));
         components.insert("backup_soc".into(),json!({"platform":"number","name":"Plant backup reserve","unique_id":format!("{}_backup_soc",config.id),

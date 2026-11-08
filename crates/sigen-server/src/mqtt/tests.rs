@@ -60,7 +60,7 @@ fn discovery_groups_entities_and_has_stable_ids_classes_and_nonoptimistic_contro
     assert_eq!(doc["device"]["sw_version"], "V1");
     assert_eq!(doc["availability_mode"], "all");
     let components = doc["components"].as_object().unwrap();
-    assert_eq!(components.len(), 37);
+    assert_eq!(components.len(), 40);
     let mut ids = std::collections::HashSet::new();
     for entity in components.values() {
         assert!(ids.insert(entity["unique_id"].as_str().unwrap()));
@@ -85,7 +85,7 @@ fn discovery_groups_entities_and_has_stable_ids_classes_and_nonoptimistic_contro
     }
     assert_eq!(
         components["ems_mode"]["options"].as_array().unwrap().len(),
-        7
+        2
     );
     assert_eq!(components["backup_soc"]["step"], 0.1);
     let offline_alert = &components["alert_hardware_offline"];
@@ -113,8 +113,8 @@ fn invalid_retained_and_duplicate_commands_are_never_accepted() {
         Command::RemoteEms { enabled: true }
     ));
     assert!(matches!(
-        parse_command(&c, &command("ems_mode", discovery::MODES[3])).unwrap(),
-        Command::EmsMode { mode: 3 }
+        parse_command(&c, &command("ems_mode", discovery::MODES[2])).unwrap(),
+        Command::EmsMode { mode: 2 }
     ));
     assert!(matches!(
         parse_command(&c, &command("backup_soc", "12.5")).unwrap(),
@@ -427,4 +427,13 @@ async fn broker_disconnect_reconnects_and_republishes_discovery() {
     assert!(shared.read().unwrap().mqtt.as_ref().unwrap().connected);
     stop.send(true).unwrap();
     task.await.unwrap();
+}
+
+#[test]
+fn disconnected_grid_sensor_exports_null_and_no_metric() {
+    let mut s = status();
+    s.readings = Some(crate::model::Readings::default());
+    assert!(snapshot_payload(&config(false), &s)["readings"]["grid_power_watts"].is_null());
+    assert!(serde_json::to_value(s.snapshot()).unwrap()["readings"]["grid_power_watts"].is_null());
+    assert!(!crate::metrics::render(&s).contains("sigen_grid_power_watts"));
 }

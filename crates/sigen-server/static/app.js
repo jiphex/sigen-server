@@ -26,6 +26,7 @@ function controls(c) {
     $('backup').value = c.backup_soc_percent;
   }
   $('mode-form').querySelector('button').disabled = !c.remote_ems_enabled;
+
 }
 function showControlAccess(s) {
   const readOnly = s.read_only === true;
@@ -48,6 +49,7 @@ function showControlAccess(s) {
 function display(s) {
   const wasReadOnly = latest?.read_only;
   latest = s;
+  setText('plant-alarms', s.readings?.plant_alarms?.join(', ') ?? '—');
   showControlAccess(s);
   setText('server-version', demo ? 'Demo · browser simulation'
     : s.server_version ? `sigen-server ${s.server_version}` : 'Server version unavailable');
@@ -77,8 +79,8 @@ function display(s) {
   $('soc-bar').hidden = !r;
   if (!r) return;
   $('solar').textContent = fmt(r.pv_power_watts/1000,'kW',2);
-  $('grid').textContent = fmt(Math.abs(r.grid_power_watts)/1000,'kW',2);
-  $('grid-direction').textContent = r.grid_power_watts >= 0 ? 'Importing from grid' : 'Exporting to grid';
+  $('grid').textContent = r.grid_sensor_connected && r.grid_power_watts != null ? fmt(Math.abs(r.grid_power_watts)/1000,'kW',2) : '—';
+  $('grid-direction').textContent = !r.grid_sensor_connected ? 'Grid sensor unavailable' : r.grid_power_watts >= 0 ? 'Importing from grid' : 'Exporting to grid';
   $('soc').textContent = fmt(r.battery_soc_percent,'%');
   $('soc-bar').value = r.battery_soc_percent;
   $('soc-bar').setAttribute('aria-valuetext', `${fmt(r.battery_soc_percent, '%')}${s.online ? '' : ' (last known reading)'}`);
@@ -112,7 +114,7 @@ async function refresh() {
 }
 // Optional groups age independently; daily values also belong to the device's local day.
 function sampleStatus(sample, s, daily = false, maxAge = 600) {
-  if (sample?.unsupported) return 'Unavailable on this device / firmware';
+  if (sample?.unsupported) return 'Unavailable register; periodic retry scheduled';
   if (sample?.value == null) return sample?.last_error ? 'Read failed · retrying' : 'Waiting for data…';
   if (daily && (sample.device_day == null || s.device_day == null || sample.device_day !== s.device_day)) return 'Waiting for today’s totals';
   const age = Math.max(0, Math.floor(Date.now()/1000) - sample.updated_unix);
@@ -172,7 +174,7 @@ async function send(command) {
       result = await response.json();
       if (!response.ok) throw new Error(result.error || `Control failed (${response.status})`);
     }
-    $('control-result').textContent = demo ? 'The demo setting has been applied. No hardware command was sent.' : 'The device has confirmed the setting.';
+    $('control-result').textContent = demo ? 'The demo setting has been applied. No hardware command was sent.' : 'Setting read back from device; electrical output has not been verified.';
     busy = false;
     if(latest) latest.controls = result.controls;
     controls(result.controls);
@@ -275,7 +277,9 @@ function showAlerts(alerts) {
     const state = row.children[1];
     const text = !alert.enabled ? 'Off' : alert.active ? `Active${alert.known ? '' : ' (last known)'}` : alert.known ? 'OK' : 'Waiting for data';
     const since = alert.since_unix ? ` since ${new Date(alert.since_unix * 1000).toLocaleString()}` : '';
-    state.title = since.trim();
+    const classifications = alert.vendor_severity ? `Device severity: ${alert.vendor_severity}; notification priority: ${alert.severity}` : '';
+    state.title = [since.trim(), classifications].filter(Boolean).join(' · ');
+    state.setAttribute('aria-label', [text, classifications].filter(Boolean).join('. '));
     const iconStatus = !alert.enabled ? 'off' : alert.active ? 'active' : alert.known ? 'ok' : 'waiting';
     if (state.dataset.status !== text + since) {
       state.textContent = text;

@@ -357,17 +357,17 @@ mod tests {
         critical.active = false;
         notifier.send(&critical).await.unwrap();
         let s = state.lock().unwrap();
-        for form in &s.1[..5] {
+        for form in &s.1[..Id::ALL.len()] {
             assert_eq!(form["priority"], "1");
             assert!(!form.contains_key("retry"));
             assert!(!form.contains_key("expire"));
         }
-        assert_eq!(s.1[5]["priority"], "2");
-        assert_eq!(s.1[5]["retry"], "60");
-        assert_eq!(s.1[5]["expire"], "1800");
-        assert_eq!(s.1[6]["priority"], "0");
-        assert!(!s.1[6].contains_key("retry"));
-        assert!(!s.1[6].contains_key("expire"));
+        assert_eq!(s.1[Id::ALL.len()]["priority"], "2");
+        assert_eq!(s.1[Id::ALL.len()]["retry"], "60");
+        assert_eq!(s.1[Id::ALL.len()]["expire"], "1800");
+        assert_eq!(s.1[Id::ALL.len() + 1]["priority"], "0");
+        assert!(!s.1[Id::ALL.len() + 1].contains_key("retry"));
+        assert!(!s.1[Id::ALL.len() + 1].contains_key("expire"));
         server.abort();
     }
     #[tokio::test]

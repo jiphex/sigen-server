@@ -36,16 +36,33 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     let bind = args.bind;
     let unit = UnitId::inverter(args.unit_id)?;
     let poll = args.poll_seconds;
+    let mut ac_units = args.ac_charger_units.clone();
+    ac_units.sort_unstable();
+    ac_units.dedup();
+    if ac_units.len() > 4 || ac_units.contains(&args.unit_id) {
+        return Err(
+            "Configure at most four distinct AC charger units, different from the inverter unit"
+                .into(),
+        );
+    }
     let read_only = !args.dangerously_enable_modbus_writes;
     let telemetry_function = if args.read_function == 3 {
         ReadFunction::Holding
     } else {
         ReadFunction::Input
     };
+    let modbus_config = Config {
+        read_only,
+        telemetry_function,
+        request_interval: Duration::from_millis(args.modbus_request_interval_ms),
+        response_timeout: Duration::from_millis(args.modbus_response_timeout_ms),
+        connect_timeout: Duration::from_millis(args.modbus_connect_timeout_ms),
+    };
+    let freshness_poll = poll + hardware::freshness_grace(&modbus_config).as_secs() - 30;
     let notifier = pushover::Notifier::from_args(&args.pushover)?;
     let write_audit = Arc::new(audit::WriteAuditLog::open(&args.write_audit_file)?);
     let mut mqtt_config =
-        mqtt::Config::from_args(&args.mqtt, &address.to_string(), unit.get(), poll)?;
+        mqtt::Config::from_args(&args.mqtt, &address.to_string(), unit.get(), freshness_poll)?;
     if read_only {
         if let Some(config) = &mut mqtt_config {
             config.controls = false;
@@ -61,8 +78,10 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         address.to_string(),
         unit.get(),
     )));
-    status.write().expect("status lock").alerts = alerts::Alerts::load(args.alerts_file, poll)?;
+    status.write().expect("status lock").alerts =
+        alerts::Alerts::load(args.alerts_file, freshness_poll)?;
     status.write().expect("status lock").read_only = read_only;
+    status.write().expect("status lock").ac_charger_units = ac_units;
     write_audit.server_started(listener.local_addr()?, address, unit.get())?;
     status.write().expect("status lock").write_audit = Some(write_audit);
     let journal = journal::Journal::open(&args.journal_file)?;
@@ -86,11 +105,7 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     let (commands, hardware_worker) = hardware::start(
         address,
         unit,
-        Config {
-            read_only,
-            telemetry_function,
-            ..Config::default()
-        },
+        modbus_config,
         Duration::from_secs(poll),
         status.clone(),
     );

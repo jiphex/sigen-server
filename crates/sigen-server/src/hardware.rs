@@ -23,7 +23,7 @@ pub enum Command {
 impl Command {
     pub fn validate(&self) -> Result<(), String> {
         match self {
-            Self::EmsMode { mode } if *mode > 6 => Err("EMS mode must be 0–6".into()),
+            Self::EmsMode { mode } if !matches!(mode, 1 | 2) => Err("Only standby and self-consumption are supported: dispatch modes require a commissioned operating envelope".into()),
             Self::BackupSoc { percent }
                 if !percent.is_finite() || !(0.0..=100.0).contains(percent) =>
             {
@@ -130,6 +130,12 @@ pub fn enqueue(
     })
 }
 
+/// Allow a complete paced core poll before declaring its preceding sample stale.
+pub fn freshness_grace(config: &Config) -> Duration {
+    Duration::from_secs(30)
+        .max(config.request_interval.max(config.response_timeout) * 20 + Duration::from_secs(10))
+}
+
 pub fn start(
     address: SocketAddr,
     unit: UnitId,
@@ -167,7 +173,7 @@ pub fn start(
                         s.readings = Some(readings);
                         s.controls = Some(controls);
                         s.control_valid_until =
-                            Some(Instant::now() + interval + Duration::from_secs(30));
+                            Some(Instant::now() + interval + freshness_grace(&config));
                     }
                     Err(error) => {
                         s.connection_event(false, Some(&error));
@@ -185,7 +191,7 @@ pub fn start(
                     }
                 }
                 crate::alerts::refresh(&mut s, now());
-                next_poll = Instant::now() + interval;
+                next_poll = Instant::now() + interval.max(config.request_interval);
             }
             match receiver.recv_timeout(
                 next_poll
@@ -324,19 +330,69 @@ fn poll(
                     "inverter serial number changed; verify the target before restarting the server",
                 ));
             }
-            status.write().expect("status lock").device = Some(device.into());
+            if !supported_hybrid_model(&device.model) {
+                return Err(sigen_modbus::Error::Protocol(
+                    "Unsupported model: requires SigenStor, Sigen Hybrid, hybrid HYA or PG Controller",
+                ));
+            }
+            let mut s = status.write().expect("status lock");
+            if s.device
+                .as_ref()
+                .is_some_and(|old| old.firmware_version != device.firmware_version)
+            {
+                s.details = Default::default();
+            }
+            s.device = Some(device.into());
         }
         let plant = client.read_plant()?;
         status.write().expect("status lock").device_day = Some(
             (i64::from(plant.epoch_seconds) + i64::from(plant.timezone_offset_minutes) * 60)
                 .div_euclid(86400),
         );
+        let plant_alarms = client.read_plant_alarms()?;
         let inverter = client.read_inverter(unit)?;
-        let battery = client.read_battery(unit)?;
+        let battery = client.read_battery(unit).map_err(|error| match error {
+            sigen_modbus::Error::Exception(1..=3) => sigen_modbus::Error::Protocol(
+                "Required hybrid battery telemetry unavailable; verify model and firmware support",
+            ),
+            other => other,
+        })?;
+        if matches!(plant.running_state, sigen_modbus::RunningState::Unknown(_))
+            || matches!(
+                inverter.running_state,
+                sigen_modbus::RunningState::Unknown(_)
+            )
+        {
+            return Err(sigen_modbus::Error::Protocol(
+                "Unknown running state; firmware compatibility must be verified",
+            ));
+        }
         let controls = read_controls(client)?;
-        Ok((Readings::new(plant, inverter, battery), controls))
+        let mut readings = Readings::new(plant, inverter, battery);
+        readings.plant_alarms = plant_alarms;
+        let ac_units = status.read().expect("status lock").ac_charger_units.clone();
+        for id in ac_units {
+            let charger = client.read_ac_charger(UnitId::inverter(id)?)?;
+            if charger.state > 7 {
+                return Err(sigen_modbus::Error::Protocol(
+                    "Invalid configured AC charger state",
+                ));
+            }
+            readings.ac_charger_alarms.insert(id, charger.alarms);
+        }
+        Ok((readings, controls))
     })();
-    result.map_err(|e| e.to_string())
+    result.map_err(|e| match e {
+        sigen_modbus::Error::Exception(1..=3) => format!("Required core register request failed ({e}); this server requires the hybrid V2.7 telemetry/control profile. Verify model, firmware and read function"),
+        other => other.to_string(),
+    })
+}
+
+fn supported_hybrid_model(model: &str) -> bool {
+    model.starts_with("SigenStor ")
+        || model.starts_with("Sigen Hybrid ")
+        || model.starts_with("PG Controller ")
+        || (model.starts_with("Sigen PV ") && model.contains("HYA"))
 }
 
 fn read_controls(client: &mut Client) -> sigen_modbus::Result<Controls> {
@@ -419,6 +475,14 @@ fn apply(
     if !confirmed {
         return Err("Write was acknowledged but readback differs; refresh before retrying".into());
     }
+    if matches!(command, Command::RemoteEms { enabled: true }) {
+        let mode = client
+            .read_registers(UnitId::PLANT, client.telemetry_function(), 30003, 1)
+            .map_err(|e| format!("Setting read back, but plant EMS status unavailable: {e}"))?[0];
+        if mode != 7 {
+            return Err("Setting read back, but plant has not reported remote EMS operation; refresh before retrying".into());
+        }
+    }
     Ok(result)
 }
 
@@ -495,7 +559,7 @@ mod tests {
         });
         let mut client = Client::connect(address).unwrap();
         assert!(
-            apply(&mut client, &Command::EmsMode { mode: 3 }, || Ok(()))
+            apply(&mut client, &Command::EmsMode { mode: 2 }, || Ok(()))
                 .unwrap_err()
                 .contains("enable remote EMS")
         );
@@ -534,6 +598,8 @@ mod poll_tests {
                 (247, 30000, 15),
                 (247, 30031, 8),
                 (247, 30051, 1),
+                (247, 30027, 4),
+                (247, 30072, 1),
                 (1, 30578, 1),
                 (1, 30587, 4),
                 (1, 31002, 2),
@@ -543,6 +609,7 @@ mod poll_tests {
                 (247, 40029, 1),
                 (247, 40031, 1),
                 (247, 40046, 1),
+                (2, 32000, 15),
             ] {
                 let mut header = [0; 7];
                 stream.read_exact(&mut header).unwrap();
@@ -553,10 +620,18 @@ mod poll_tests {
                 assert_eq!(u16::from_be_bytes([pdu[1], pdu[2]]), address);
                 assert_eq!(u16::from_be_bytes([pdu[3], pdu[4]]), count);
                 let mut words = vec![0_u16; count as usize];
+                if address == 30500 {
+                    for (word, bytes) in words.iter_mut().zip(b"SigenStor EC ".as_chunks::<2>().0) {
+                        *word = u16::from_be_bytes([bytes[0], bytes[1]]);
+                    }
+                }
                 if address == 30031 {
                     words[5] = 1234;
                     words[6] = 0xffff;
                     words[7] = 0xfc18;
+                }
+                if address == 32000 {
+                    words[12] = 4;
                 }
                 if address == 30591 {
                     words[10] = 755;
@@ -572,6 +647,7 @@ mod poll_tests {
             }
         });
         let status = Arc::new(RwLock::new(Status::new(address.to_string(), 1)));
+        status.write().unwrap().ac_charger_units = vec![2];
         let (readings, controls) = poll(
             &mut None,
             address,
@@ -580,6 +656,7 @@ mod poll_tests {
             &status,
         )
         .unwrap();
+        assert_eq!(readings.ac_charger_alarms.get(&2), Some(&[4, 0, 0]));
         assert_eq!(readings.pv_power_watts, 1234.0);
         assert_eq!(readings.battery_power_watts, -1000.0);
         assert_eq!(readings.battery_soc_percent, 75.5);
@@ -680,6 +757,55 @@ mod safety_tests {
     }
 
     #[test]
+    fn model_family_validation_rejects_pv_only_and_unknown_devices() {
+        for model in ["", "Sigen PV Max 10 TP", "EVAC 11", "Unknown inverter"] {
+            assert!(!supported_hybrid_model(model));
+        }
+        for model in [
+            "SigenStor EC 10 TP",
+            "Sigen Hybrid 5 SP",
+            "Sigen PV 100M1-HYA",
+            "PG Controller 7.6",
+        ] {
+            assert!(supported_hybrid_model(model));
+        }
+    }
+
+    #[test]
+    fn slow_transport_has_a_full_poll_freshness_budget() {
+        assert_eq!(freshness_grace(&Config::default()), Duration::from_secs(30));
+        let config = Config {
+            request_interval: Duration::from_secs(10),
+            ..Config::default()
+        };
+        assert!(freshness_grace(&config) >= Duration::from_secs(160));
+    }
+
+    #[test]
+    fn uncommissioned_dispatch_modes_send_no_requests() {
+        for mode in [0, 3, 4, 5, 6, 7, u16::MAX] {
+            assert!(
+                execute(Command::EmsMode { mode }, vec![], || Ok(()))
+                    .unwrap_err()
+                    .contains("operating envelope")
+            );
+        }
+    }
+
+    #[test]
+    fn enable_requires_observed_plant_ems_status() {
+        let mut steps = controls(0, 1, 200);
+        steps.push(Step::Write(40029, 1));
+        steps.extend(controls(1, 1, 200));
+        steps.push(Step::Read(30003, 0));
+        assert!(
+            execute(Command::RemoteEms { enabled: true }, steps, || Ok(()))
+                .unwrap_err()
+                .contains("has not reported")
+        );
+    }
+
+    #[test]
     fn invalid_control_readbacks_stop_before_any_write() {
         let cases = vec![
             vec![Step::Read(40029, 2)],
@@ -720,6 +846,7 @@ mod safety_tests {
         steps.extend(controls(0, 1, 200));
         steps.push(Step::Write(40029, 1));
         steps.extend(controls(1, 1, 200));
+        steps.push(Step::Read(30003, 7));
         let result = execute(Command::RemoteEms { enabled: true }, steps, || Ok(())).unwrap();
         assert!(result.remote_ems_enabled);
         assert_eq!(result.remote_ems_mode, 1);
@@ -770,6 +897,9 @@ mod safety_tests {
                     );
                     steps.push(Step::Write(40029, 1));
                     steps.extend(controls(1, 6, 200));
+                    if already_enabled {
+                        steps.push(Step::Read(30003, 7));
+                    }
                     let result = execute(Command::RemoteEms { enabled: true }, steps, || Ok(()));
                     if already_enabled {
                         assert_eq!(result.unwrap().remote_ems_mode, 6);
@@ -787,10 +917,10 @@ mod safety_tests {
     #[test]
     fn matching_mode_is_not_confirmation_if_remote_ems_was_disabled() {
         let mut steps = controls(1, 2, 200);
-        steps.push(Step::Write(40031, 3));
-        steps.extend(controls(0, 3, 200));
+        steps.push(Step::Write(40031, 2));
+        steps.extend(controls(0, 2, 200));
         assert!(
-            execute(Command::EmsMode { mode: 3 }, steps, || Ok(()))
+            execute(Command::EmsMode { mode: 2 }, steps, || Ok(()))
                 .unwrap_err()
                 .contains("readback differs")
         );
@@ -798,7 +928,7 @@ mod safety_tests {
 
     #[test]
     fn every_mode_and_reserve_boundary_writes_the_exact_plant_register() {
-        let mut cases: Vec<_> = (0..=6)
+        let mut cases: Vec<_> = (1..=2)
             .map(|mode| (Command::EmsMode { mode }, 40031, mode, mode, 200))
             .collect();
         cases.extend([
@@ -978,6 +1108,13 @@ mod safety_tests {
                     let count = u16::from_be_bytes([pdu[3], pdu[4]]);
                     let mut reply = vec![4, (count * 2) as u8];
                     let mut words = vec![0_u16; count as usize];
+                    if register == 30500 {
+                        for (word, bytes) in
+                            words.iter_mut().zip(b"SigenStor EC ".as_chunks::<2>().0)
+                        {
+                            *word = u16::from_be_bytes([bytes[0], bytes[1]]);
+                        }
+                    }
                     if register == 40029 {
                         words[0] = 1;
                     }
@@ -1023,7 +1160,7 @@ mod safety_tests {
             request_id = first.id.clone();
             first.event(&s, "control_requested", json!(null));
             sender.try_send(first).unwrap();
-            let second = Job::new(Command::EmsMode { mode: 3 }, reply2, &s).unwrap();
+            let second = Job::new(Command::EmsMode { mode: 2 }, reply2, &s).unwrap();
             second.event(&s, "control_requested", json!(null));
             sender.try_send(second).unwrap();
         }
