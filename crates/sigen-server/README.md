@@ -452,9 +452,26 @@ or Alertmanager receivers.
 
 ## Logging
 
-The server initializes `tracing_subscriber` once at startup. Structured tracing
-logs go to stderr; the default level is `info`. Dependencies using the `log`
-facade are bridged through the subscriber as well. Configure filtering with
+The server initializes `tracing_subscriber` once at startup. On Linux, structured
+tracing events go directly to the systemd journal when its socket is accessible.
+Otherwise (including macOS and systems without systemd), logs go to stderr.
+Only one output is used, avoiding duplicate entries when systemd also captures
+stderr. Journal entries include event fields, span context and severity, with
+the syslog identifier `sigen-server`. View them with:
+
+```sh
+journalctl -t sigen-server -f
+journalctl -t sigen-server -o verbose
+```
+
+Use `--log-stderr` or `SIGEN_LOG_STDERR=true` to force stderr output, for example
+when redirecting logs to a file. Journal availability is checked at startup;
+automatic fallback does not cover a journal that stops accepting events later.
+This logging output is separate from the persistent SQLite event journal
+configured by `SIGEN_JOURNAL_FILE`.
+
+The default level is `info`. Dependencies using the `log` facade are bridged
+through the subscriber as well. Configure filtering for either output with
 `RUST_LOG`, for example:
 
 ```sh

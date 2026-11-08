@@ -17,6 +17,9 @@ pub struct Cli {
         value_name = "IP:PORT"
     )]
     pub bind: SocketAddr,
+    /// Log to stderr instead of automatically using the systemd journal when available
+    #[arg(long, env = "SIGEN_LOG_STDERR", default_value_t = false, action = ArgAction::Set, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
+    pub log_stderr: bool,
     /// Append-only JSONL log of all Modbus write transmissions
     #[arg(
         long,

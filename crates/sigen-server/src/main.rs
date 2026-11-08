@@ -3,6 +3,7 @@ mod audit;
 mod cli;
 mod hardware;
 mod journal;
+mod logging;
 mod metrics;
 mod model;
 mod mqtt;
@@ -20,12 +21,7 @@ use std::{
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     let args = cli::Cli::parse();
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .with_writer(std::io::stderr)
-        .init();
+    logging::init(args.log_stderr);
     match run(args).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

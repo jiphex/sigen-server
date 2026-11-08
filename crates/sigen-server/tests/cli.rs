@@ -8,7 +8,44 @@ use std::{
 fn server() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_sigen-server"));
     command.env_clear();
+    // Keep subprocess logs observable even on Linux hosts running journald.
+    command.env("SIGEN_LOG_STDERR", "true");
     command
+}
+
+#[test]
+fn stderr_logging_respects_rust_log() {
+    // Opening a directory as the audit file fails before any workers start.
+    for (filter, should_log) in [("error", true), ("off", false)] {
+        let output = server()
+            .env("SIGEN_LOG_STDERR", "false")
+            .env("SIGEN_WRITE_AUDIT_FILE", std::env::temp_dir())
+            .env("RUST_LOG", filter)
+            .args(["--address", "127.0.0.1:1", "--log-stderr"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(stderr.contains("Server failed"), should_log, "{stderr}");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn automatic_logging_falls_back_to_stderr_without_systemd() {
+    let output = server()
+        .env_remove("SIGEN_LOG_STDERR")
+        .env("SIGEN_WRITE_AUDIT_FILE", std::env::temp_dir())
+        .args(["--address", "127.0.0.1:1"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("Server failed")
+    );
 }
 
 #[test]
