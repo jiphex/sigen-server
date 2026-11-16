@@ -8,6 +8,7 @@ mod metrics;
 mod model;
 mod mqtt;
 mod pushover;
+mod systemd;
 mod telemetry;
 mod web;
 
@@ -121,6 +122,7 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(modbus_address = %address, unit_id = unit.get(), poll_seconds = poll, "Server started: http://{}", listener.local_addr()?);
     let shutdown_signal = stop.clone();
     let shutdown_status = status.clone();
+    let systemd_task = systemd::start(stop.subscribe());
     let result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
@@ -147,6 +149,7 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         s.invalidate_controls();
     }
     let _ = stop.send(true);
+    let _ = systemd_task.await;
     if let Some(task) = mqtt_task {
         let _ = tokio::time::timeout(Duration::from_secs(3), task).await;
     }

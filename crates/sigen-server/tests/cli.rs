@@ -191,6 +191,18 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
     .enumerate()
     {
         let mut command = server();
+        #[cfg(target_os = "linux")]
+        let notifications = {
+            let socket_path = directory.join(format!("notify-{run}.sock"));
+            let socket = std::os::unix::net::UnixDatagram::bind(&socket_path).unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            command
+                .env("NOTIFY_SOCKET", socket_path)
+                .env("WATCHDOG_USEC", "100000");
+            socket
+        };
         // The former opt-out and MQTT controls alone must not enable Modbus writes.
         command
             .env("SIGEN_READ_ONLY", "false")
@@ -259,6 +271,14 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
             }),
             "{response}"
         );
+        #[cfg(target_os = "linux")]
+        {
+            let mut buffer = [0; 256];
+            let length = notifications.recv(&mut buffer).unwrap();
+            assert_eq!(&buffer[..length], b"READY=1");
+            let length = notifications.recv(&mut buffer).unwrap();
+            assert_eq!(&buffer[..length], b"WATCHDOG=1");
+        }
         assert!(
             Command::new("kill")
                 .args(["-TERM", &child.0.id().to_string()])
@@ -266,6 +286,25 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
                 .unwrap()
                 .success()
         );
+        #[cfg(target_os = "linux")]
+        {
+            let mut messages = Vec::new();
+            loop {
+                let mut buffer = [0; 256];
+                let length = notifications.recv(&mut buffer).unwrap();
+                let message = String::from_utf8(buffer[..length].to_vec()).unwrap();
+                let stopping = message == "STOPPING=1";
+                messages.push(message);
+                if stopping {
+                    break;
+                }
+            }
+            assert!(
+                messages
+                    .iter()
+                    .all(|message| matches!(message.as_str(), "WATCHDOG=1" | "STOPPING=1"))
+            );
+        }
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if let Some(exit) = child.0.try_wait().unwrap() {

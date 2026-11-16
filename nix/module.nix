@@ -70,6 +70,9 @@ in
         SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
       } // cfg.environment;
       serviceConfig = {
+        Type = "notify";
+        NotifyAccess = "main";
+        WatchdogSec = "30s";
         ExecStart = lib.escapeShellArgs ([ (lib.getExe cfg.package) ] ++ cfg.extraArgs);
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
         DynamicUser = true;

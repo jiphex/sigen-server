@@ -37,8 +37,8 @@ For example, download the Linux x86_64 archive and `SHA256SUMS`, then run:
 
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS
-tar -xzf sigen-server-1.0.4-x86_64-unknown-linux-musl.tar.gz
-cd sigen-server-1.0.4-x86_64-unknown-linux-musl
+tar -xzf sigen-server-1.0.5-x86_64-unknown-linux-musl.tar.gz
+cd sigen-server-1.0.5-x86_64-unknown-linux-musl
 ./sigen-server --address 192.168.1.50:502
 ```
 
@@ -46,7 +46,7 @@ On macOS, verify with `shasum -a 256` and compare the archive's hash with
 `SHA256SUMS`. macOS binaries are unsigned and are not notarized.
 
 The **Release binaries** GitHub Actions workflow builds and publishes all targets
-when a tag such as `1.0.4` is pushed. It can also run manually with an existing tag
+when a tag such as `1.0.5` is pushed. It can also run manually with an existing tag
 to add or replace binaries on that release. All three tools must report the tag's
 version before publication; a release is created if it does not already exist.
 
@@ -101,6 +101,13 @@ a dynamic unprivileged user. Its persistent event journal, alert settings and wr
 live in `/var/lib/sigen-server`. It listens on localhost by default and does
 not open firewall ports. For remote access, use an authenticated HTTPS reverse
 proxy or a trusted private network; the server has no user authentication.
+
+The unit uses systemd readiness notifications and a 30-second watchdog to restart
+an unresponsive daemon. On Linux, the server sends `READY=1` after initialization,
+`WATCHDOG=1` at half the timeout supplied by systemd, and `STOPPING=1` on shutdown.
+Inverter connection failures do not stop watchdog heartbeats. For a custom unit,
+set `Type=notify`, `NotifyAccess=main`, and `WatchdogSec=30s`. The server remains
+in the foreground; notifications are inactive when systemd has not configured them.
 
 `environment` accepts any server environment option. Use `environmentFile` for
 credentials such as `SIGEN_MQTT_PASSWORD` and `SIGEN_PUSHOVER_TOKEN`; values

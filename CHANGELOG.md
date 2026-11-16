@@ -1,5 +1,24 @@
 # Release notes
 
+## 1.0.5 — 2026-11-16
+
+### Added
+
+- Systemd readiness, watchdog, and shutdown notifications, enabled in the NixOS service.
+- Local and selectable timezone display in the journal CLI, with bundled timezone data.
+- Expanded alarm monitoring and dashboard light and dark themes.
+
+### Fixed
+
+- Hardened hardware controls and command deadlines.
+- Improved alert settings durability, journal queue capacity, and critical notification delivery.
+- Bounded dashboard requests and refreshed authoritative status after changes.
+- Clarified dashboard freshness alerts, settings, and journal navigation.
+
+### Changed
+
+- Server, journal CLI, and simulator report version `1.0.5`.
+
 ## 1.0.4 — 2026-11-08
 
 ### Added
