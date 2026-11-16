@@ -58,6 +58,7 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         response_timeout: Duration::from_millis(args.modbus_response_timeout_ms),
         connect_timeout: Duration::from_millis(args.modbus_connect_timeout_ms),
     };
+    hardware::validate_control_timing(&modbus_config)?;
     let freshness_poll = poll + hardware::freshness_grace(&modbus_config).as_secs() - 30;
     let notifier = pushover::Notifier::from_args(&args.pushover)?;
     let write_audit = Arc::new(audit::WriteAuditLog::open(&args.write_audit_file)?);

@@ -740,3 +740,5 @@ before I/O. Adding commissioned dispatch is a separate feature requiring explici
 operating envelopes and validation; this version has no bypass switch. The raw
 Modbus library remains a lower-level API with caller-managed control policy.
 See [COMMISSIONING.md](../../COMMISSIONING.md) for remaining installation verification.
+
+Writable configurations must fit twelve paced request/response exchanges plus five seconds of headroom within the 60-second control deadline. Slower transport settings are supported in read-only mode; writable startup rejects them. Queue waits can still expire without executing a command.

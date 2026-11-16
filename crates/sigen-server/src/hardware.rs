@@ -136,6 +136,18 @@ pub fn freshness_grace(config: &Config) -> Duration {
         .max(config.request_interval.max(config.response_timeout) * 20 + Duration::from_secs(10))
 }
 
+/// The longest supported control uses twelve paced request/response exchanges.
+/// Keep headroom within the shared HTTP/MQTT/job deadline; queue waits can still expire.
+pub fn validate_control_timing(config: &Config) -> Result<(), &'static str> {
+    let budget = (config.request_interval + config.response_timeout) * 12 + Duration::from_secs(5);
+    if !config.read_only && budget > Duration::from_secs(60) {
+        return Err(
+            "Modbus timing exceeds the 60-second control budget; reduce request interval/response timeout or use read-only mode",
+        );
+    }
+    Ok(())
+}
+
 pub fn start(
     address: SocketAddr,
     unit: UnitId,
@@ -512,6 +524,18 @@ mod tests {
         stream.write_all(&header).unwrap();
         stream.write_all(response).unwrap();
     }
+    #[test]
+    fn writable_transport_must_fit_complete_control_budget() {
+        assert!(validate_control_timing(&Config::default()).is_ok());
+        let mut config = Config {
+            request_interval: Duration::from_secs(10),
+            ..Config::default()
+        };
+        assert!(validate_control_timing(&config).is_err());
+        config.read_only = true;
+        assert!(validate_control_timing(&config).is_ok());
+    }
+
     #[test]
     fn writes_require_actual_matching_readback() {
         for readback in [200_u16, 300] {
