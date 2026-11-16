@@ -157,6 +157,34 @@ impl Notifier {
     }
 }
 
+struct Delivery {
+    note: Notification,
+    attempt: u8,
+    due: tokio::time::Instant,
+}
+impl Delivery {
+    fn new(note: Notification) -> Self {
+        Self {
+            note,
+            attempt: 1,
+            due: tokio::time::Instant::now(),
+        }
+    }
+}
+fn next_delivery(pending: &[Delivery], now: tokio::time::Instant) -> Option<usize> {
+    pending
+        .iter()
+        .enumerate()
+        .filter(|(i, d)| {
+            d.due <= now
+                && !pending[..*i]
+                    .iter()
+                    .any(|earlier| earlier.note.id == d.note.id)
+        })
+        .max_by_key(|(i, d)| (d.note.active, d.note.severity, std::cmp::Reverse(*i)))
+        .map(|(i, _)| i)
+}
+
 pub fn start(
     notifier: Notifier,
     status: SharedStatus,
@@ -174,59 +202,70 @@ pub fn start(
             recovery = notifier.recovery,
             "Pushover notifications enabled"
         );
+        let mut pending: Vec<Delivery> = Vec::new();
         loop {
-            let note = tokio::select! { _ = stop.changed() => break, note = receiver.recv() => match note {Some(note)=>note,None=>break} };
-            if !note.active && !notifier.recovery {
-                continue;
+            // Bound both waiting work and the input channel. Drain before choosing
+            // a delivery so critical activations outrank queued recoveries.
+            while pending.len() < 32 {
+                match receiver.try_recv() {
+                    Ok(note) => pending.push(Delivery::new(note)),
+                    Err(_) => break,
+                }
             }
-            // A toggle cancels queued deliveries as well as future transitions.
-            if !enabled(&status, note.id) {
-                continue;
-            }
-            let delivery = async {
-                for attempt in 1..=3 {
-                    if !enabled(&status, note.id) {
-                        return;
+            pending.retain(|d| (d.note.active || notifier.recovery) && enabled(&status, d.note.id));
+            if let Some(index) = next_delivery(&pending, tokio::time::Instant::now()) {
+                let mut delivery = pending.remove(index);
+                let result = tokio::select! {
+                    _ = stop.changed() => break,
+                    result = notifier.send(&delivery.note) => result,
+                };
+                let mut s = status.write().expect("status lock");
+                let p = s.pushover.as_mut().unwrap();
+                match result {
+                    Ok(()) => {
+                        tracing::info!(
+                            alert = delivery.note.id.key(),
+                            recovery = !delivery.note.active,
+                            "Pushover notification accepted"
+                        );
+                        p.sent_total += 1;
+                        p.last_sent_unix = Some(hardware::now());
+                        p.last_error = None;
                     }
-                    match notifier.send(&note).await {
-                        Ok(()) => {
-                            let mut s = status.write().expect("status lock");
-                            let p = s.pushover.as_mut().unwrap();
-                            p.sent_total += 1;
-                            p.last_sent_unix = Some(hardware::now());
-                            p.last_error = None;
-                            tracing::info!(
-                                alert = note.id.key(),
-                                recovery = !note.active,
-                                "Pushover notification accepted"
-                            );
-                            return;
-                        }
-                        Err(error) => {
-                            tracing::warn!(alert=note.id.key(),attempt,error=%error.message,"Pushover notification failed");
-                            status
-                                .write()
-                                .expect("status lock")
-                                .pushover
-                                .as_mut()
-                                .unwrap()
-                                .last_error = Some(error.message);
-                            if !error.retry || attempt == 3 {
-                                status
-                                    .write()
-                                    .expect("status lock")
-                                    .pushover
-                                    .as_mut()
-                                    .unwrap()
-                                    .failed_total += 1;
-                                return;
-                            }
-                            tokio::time::sleep(Duration::from_secs(5)).await;
+                    Err(error) => {
+                        tracing::warn!(alert = delivery.note.id.key(), attempt = delivery.attempt, error = %error.message, "Pushover notification failed");
+                        p.last_error = Some(error.message);
+                        if error.retry && delivery.attempt < 3 {
+                            delivery.attempt += 1;
+                            delivery.due = tokio::time::Instant::now() + Duration::from_secs(5);
+                            pending.insert(index.min(pending.len()), delivery);
+                        } else {
+                            p.failed_total += 1;
                         }
                     }
                 }
-            };
-            tokio::select! { _ = stop.changed() => break, _ = delivery => () }
+                continue;
+            }
+            let due = pending
+                .iter()
+                .enumerate()
+                .filter(|(i, d)| {
+                    !pending[..*i]
+                        .iter()
+                        .any(|earlier| earlier.note.id == d.note.id)
+                })
+                .map(|(_, d)| d.due)
+                .min()
+                .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(3600));
+            tokio::select! {
+                biased;
+                _ = stop.changed() => break,
+                note = receiver.recv(), if pending.len() < 32 => match note {
+                    Some(note) => pending.push(Delivery::new(note)),
+                    None => break,
+                },
+                _ = tokio::time::sleep_until(due) => (),
+            }
         }
         tracing::info!("Pushover notification worker stopped");
     })
@@ -268,6 +307,25 @@ mod tests {
             unit: 1,
         }
     }
+    #[test]
+    fn critical_delivery_precedes_recovery_and_delayed_retries() {
+        let recovery = Delivery::new(note(false));
+        let mut retry = Delivery::new(note(true));
+        retry.due += Duration::from_secs(5);
+        let mut critical = Delivery::new(note(true));
+        critical.note.id = Id::BatteryAlarm;
+        critical.note.severity = Severity::Critical;
+        let pending = vec![recovery, retry, critical];
+        assert_eq!(
+            next_delivery(&pending, tokio::time::Instant::now()),
+            Some(2)
+        );
+        assert_eq!(
+            next_delivery(&pending[..2], tokio::time::Instant::now()),
+            Some(0)
+        );
+    }
+
     #[test]
     fn configuration_is_optional_and_validates_credentials_without_echoing_them() {
         assert!(
