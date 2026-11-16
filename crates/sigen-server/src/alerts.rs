@@ -200,6 +200,8 @@ pub struct Alerts {
     #[serde(skip)]
     settings: Settings,
     #[serde(skip)]
+    save_lock: std::sync::Arc<std::sync::Mutex<()>>,
+    #[serde(skip)]
     path: Option<PathBuf>,
     #[serde(skip)]
     stale_after: u64,
@@ -229,6 +231,7 @@ impl Alerts {
                 })
                 .collect(),
             settings,
+            save_lock: Default::default(),
             path,
             stale_after,
             started: hardware::now(),
@@ -380,15 +383,18 @@ pub fn refresh(status: &mut Status, now: u64) {
 
 /// Persist a toggle before applying it; a failed save leaves live settings intact.
 pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<Alerts> {
-    let mut s = status.write().expect("status lock");
-    let mut settings = s.alerts.settings.clone();
+    let save_lock = status.read().expect("status lock").alerts.save_lock.clone();
+    let _save = save_lock.lock().expect("alert settings lock");
+    let alerts = status.read().expect("status lock").alerts.clone();
+    let mut settings = alerts.settings.clone();
     let changed = settings.enabled(id) != enabled;
     settings.set(id, enabled);
     // Persist before changing live settings, keeping concurrent edits serialized.
-    s.alerts.save(&settings).inspect_err(|error| {
+    alerts.save(&settings).inspect_err(|error| {
         tracing::error!(%error, alert = id.key(), "Could not save alert settings");
     })?;
     tracing::info!(alert = id.key(), enabled, "Alert setting saved");
+    let mut s = status.write().expect("status lock");
     s.alerts.settings = settings;
     if changed {
         s.event(
@@ -711,6 +717,21 @@ mod tests {
             assert!(!alert(&s, Id::BatteryAlarm).active);
         }
     }
+    #[test]
+    fn waiting_settings_save_does_not_lock_status() {
+        let shared = Arc::new(RwLock::new(healthy()));
+        let lock = shared.read().unwrap().alerts.save_lock.clone();
+        let guard = lock.lock().unwrap();
+        let worker_status = shared.clone();
+        let worker = std::thread::spawn(move || {
+            set_enabled(&worker_status, Id::ControlFailed, false).unwrap();
+        });
+        shared.write().unwrap().poll_errors += 1;
+        drop(guard);
+        worker.join().unwrap();
+        assert!(!shared.read().unwrap().alerts.settings.control_failed);
+    }
+
     #[test]
     fn toggles_persist_and_failed_saves_do_not_change_live_settings() {
         let path =
