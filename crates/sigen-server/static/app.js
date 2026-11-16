@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const demo = new URLSearchParams(window.location.search).get('demo') === '1' ? createDemo() : null;
 let busy = false, latest = null, savingAlert = false, updatesPaused = false;
 let alertSignature = '';
+let statusRefresh = null;
 let journalBusy = false, journalLoaded = false, journalBefore = null;
 const emsNames = {0:'Maximum self-consumption',1:'AI',2:'Time of use',5:'Full feed-in',7:'Remote EMS',9:'Custom'};
 const fmt = (n, unit, digits=1) => `${Number(n).toFixed(digits)} ${unit}`;
@@ -95,10 +96,16 @@ function display(s) {
   $('alarms').textContent = r.alarms.every(n=>n===0) ? 'None' : r.alarms.map(n=>`0x${n.toString(16).padStart(4,'0')}`).join(' · ');
   $('ems').textContent = emsNames[r.ems_work_mode] ?? `Unknown (${r.ems_work_mode})`;
 }
-async function refresh() {
+function refresh() {
+  if (demo) return refreshStatus();
+  if (statusRefresh) return statusRefresh;
+  statusRefresh = refreshStatus().finally(() => { statusRefresh = null; });
+  return statusRefresh;
+}
+async function refreshStatus() {
   if (demo) { display(demo.snapshot()); return; }
   try {
-    const response = await fetch('/api/status', {cache:'no-store'});
+    const response = await fetch('/api/status', {cache:'no-store', signal: AbortSignal.timeout(10000)});
     if (!response.ok) throw new Error(`Status request failed (${response.status})`);
     display(await response.json());
   } catch(e) {

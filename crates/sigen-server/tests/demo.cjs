@@ -112,7 +112,7 @@ function dashboard(search, fetch) {
   nodes['demo-metrics'].hidden = true;
   let tick;
   const context = vm.createContext({
-    URLSearchParams, window: {location: {search}}, fetch,
+    URLSearchParams, AbortSignal, window: {location: {search}}, fetch,
     setInterval(callback) { tick = callback; },
     document
   });
@@ -431,4 +431,22 @@ test('dispatch choices are disabled and missing grid power is unavailable', () =
   assert.equal(ui.nodes.grid.textContent, '—');
   assert.equal(ui.nodes['grid-direction'].textContent, 'Grid sensor unavailable');
   assert.match(ui.nodes['plant-alarms'].textContent, /0, 0, 0, 1, 0/);
+});
+
+
+test('status refreshes share one pending request', async () => {
+  let resolve, calls = 0;
+  const ui = dashboard('', () => {
+    calls++;
+    return new Promise(done => { resolve = done; });
+  });
+  const first = ui.tick();
+  const second = ui.tick();
+  assert.equal(calls, 1);
+  resolve({ok: true, json: async () => simulator().snapshot()});
+  await Promise.all([first, second]);
+  const next = ui.tick();
+  assert.equal(calls, 2);
+  resolve({ok: true, json: async () => simulator().snapshot()});
+  await next;
 });
