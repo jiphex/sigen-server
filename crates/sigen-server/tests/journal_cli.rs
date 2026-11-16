@@ -75,9 +75,11 @@ fn reads_live_wal_in_newest_order_and_supports_filters_cursors_and_jsonl() {
     assert!(text.contains("--before 3"));
     let utc = fixture.run(&["--limit", "1", "--tz", "UTC"]);
     assert!(utc.status.success());
-    assert!(String::from_utf8(utc.stdout).unwrap().starts_with(
-        "#4 2023-11-14T22:13:20.000+0000 [control] control_confirmed"
-    ));
+    assert!(
+        String::from_utf8(utc.stdout)
+            .unwrap()
+            .starts_with("#4 2023-11-14T22:13:20.000+0000 [control] control_confirmed")
+    );
     let output = fixture.run(&["--category", "control", "--before", "4", "--json"]);
     assert!(output.status.success());
     let events: Vec<Value> = String::from_utf8(output.stdout)
