@@ -450,3 +450,21 @@ test('status refreshes share one pending request', async () => {
   resolve({ok: true, json: async () => simulator().snapshot()});
   await next;
 });
+
+
+test('post-mutation refresh discards earlier status and requests a new snapshot', async () => {
+  const pending = [];
+  const ui = dashboard('', () => new Promise(resolve => pending.push(resolve)));
+  const refreshed = vm.runInContext('refresh(true)', ui.context);
+  const old = simulator().snapshot();
+  old.server_version = 'old';
+  pending.shift()({ok: true, json: async () => old});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pending.length, 1);
+  assert.doesNotMatch(ui.nodes['server-version'].textContent, /old/);
+  const current = simulator().snapshot();
+  current.server_version = 'new';
+  pending.shift()({ok: true, json: async () => current});
+  await refreshed;
+  assert.match(ui.nodes['server-version'].textContent, /new/);
+});

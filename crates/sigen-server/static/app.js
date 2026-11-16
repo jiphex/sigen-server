@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 const demo = new URLSearchParams(window.location.search).get('demo') === '1' ? createDemo() : null;
 let busy = false, latest = null, savingAlert = false, updatesPaused = false;
 let alertSignature = '';
-let statusRefresh = null;
+let statusRefresh = null, statusGeneration = 0;
 let journalBusy = false, journalLoaded = false, journalBefore = null;
 const emsNames = {0:'Maximum self-consumption',1:'AI',2:'Time of use',5:'Full feed-in',7:'Remote EMS',9:'Custom'};
 const fmt = (n, unit, digits=1) => `${Number(n).toFixed(digits)} ${unit}`;
@@ -96,19 +96,28 @@ function display(s) {
   $('alarms').textContent = r.alarms.every(n=>n===0) ? 'None' : r.alarms.map(n=>`0x${n.toString(16).padStart(4,'0')}`).join(' · ');
   $('ems').textContent = emsNames[r.ems_work_mode] ?? `Unknown (${r.ems_work_mode})`;
 }
-function refresh() {
+function refresh(afterChange = false) {
   if (demo) return refreshStatus();
+  if (afterChange) statusGeneration++;
   if (statusRefresh) return statusRefresh;
-  statusRefresh = refreshStatus().finally(() => { statusRefresh = null; });
+  statusRefresh = (async () => {
+    let generation;
+    do {
+      generation = statusGeneration;
+      await refreshStatus(generation);
+    } while (generation !== statusGeneration);
+  })().finally(() => { statusRefresh = null; });
   return statusRefresh;
 }
-async function refreshStatus() {
+async function refreshStatus(generation = statusGeneration) {
   if (demo) { display(demo.snapshot()); return; }
   try {
     const response = await fetch('/api/status', {cache:'no-store', signal: AbortSignal.timeout(10000)});
     if (!response.ok) throw new Error(`Status request failed (${response.status})`);
-    display(await response.json());
+    const snapshot = await response.json();
+    if (generation === statusGeneration) display(snapshot);
   } catch(e) {
+    if (generation !== statusGeneration) return;
     setText('connection', 'Server unreachable');
     $('connection').className = '';
     $('controls').disabled = true;
@@ -188,7 +197,7 @@ async function send(command) {
   } catch(e) {
     $('control-result').textContent = e.message;
     $('control-result').className = 'failed';
-  } finally { busy = false; await refresh(); restoreFocus(focused); }
+  } finally { busy = false; await refresh(true); restoreFocus(focused); }
 }
 $('remote-form').addEventListener('submit',e=>{e.preventDefault();send({action:'remote_ems',enabled:$('remote').value==='true'});});
 $('mode-form').addEventListener('submit',e=>{e.preventDefault();send({action:'ems_mode',mode:Number($('mode').value)});});
@@ -331,7 +340,7 @@ async function saveAlert(id, enabled) {
     savingAlert = false;
     $('alerts').setAttribute('aria-busy', 'false');
     $('alerts').querySelectorAll('input').forEach(input => input.removeAttribute('aria-disabled'));
-    await refresh();
+    await refresh(true);
   }
 }
 
