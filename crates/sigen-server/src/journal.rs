@@ -32,13 +32,18 @@ pub struct Page {
 #[derive(Debug)]
 enum Work {
     Record(Event),
-    Query(Query, oneshot::Sender<Result<Vec<Event>, String>>),
+    Query(
+        Query,
+        oneshot::Sender<Result<Vec<Event>, String>>,
+        tokio::sync::OwnedSemaphorePermit,
+    ),
     Stop(Option<Box<Event>>, oneshot::Sender<Result<(), String>>),
 }
 
 #[derive(Clone, Debug)]
 pub struct Journal {
     sender: mpsc::SyncSender<Work>,
+    query_slots: Arc<tokio::sync::Semaphore>,
     health: Arc<Mutex<Health>>,
     session: Arc<String>,
 }
@@ -100,7 +105,7 @@ impl Journal {
                             }
                             Err(error) => lost(&worker_health, &error.to_string()),
                         },
-                        Work::Query(query, reply) => {
+                        Work::Query(query, reply, _permit) => {
                             if !reply.is_closed() {
                                 let _ = reply
                                     .send(read(&connection, &query).map_err(|e| e.to_string()));
@@ -132,6 +137,7 @@ impl Journal {
             })?;
         Ok(Self {
             sender,
+            query_slots: Arc::new(tokio::sync::Semaphore::new(4)),
             health,
             session: Arc::new(format!("{}-{}", timestamp(), std::process::id())),
         })
@@ -181,10 +187,15 @@ impl Journal {
     /// shift older pages. SQL parameters and result counts are bounded at the API.
     pub async fn query(&self, query: Query) -> Result<Page, String> {
         query.validate()?;
+        let permit = self
+            .query_slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| "Event journal query capacity exhausted".to_owned())?;
         let limit = usize::from(query.limit.unwrap_or(50));
         let (reply, response) = oneshot::channel();
         self.sender
-            .try_send(Work::Query(query, reply))
+            .try_send(Work::Query(query, reply, permit))
             .map_err(|_| "Event journal is busy or unavailable".to_owned())?;
         let mut events = tokio::time::timeout(Duration::from_secs(3), response)
             .await
@@ -414,10 +425,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn queries_leave_capacity_for_event_records() {
+        let (sender, receiver) = mpsc::sync_channel(256);
+        let journal = Journal {
+            sender,
+            query_slots: Arc::new(tokio::sync::Semaphore::new(4)),
+            health: Arc::new(Mutex::new(Health::default())),
+            session: Arc::new("test".into()),
+        };
+        for _ in 0..4 {
+            let permit = journal.query_slots.clone().try_acquire_owned().unwrap();
+            let (reply, response) = oneshot::channel();
+            journal
+                .sender
+                .try_send(Work::Query(Query::default(), reply, permit))
+                .unwrap();
+            drop(response); // Cancellation must not release a queued query's slot.
+        }
+        assert!(journal.query(Query::default()).await.is_err());
+        journal.record(
+            &Status::new("test".into(), 1),
+            Category::Server,
+            "test",
+            json!({}),
+        );
+        assert_eq!(journal.health().dropped_total, 0);
+        assert_eq!(receiver.try_iter().count(), 5);
+        assert_eq!(journal.query_slots.available_permits(), 4);
+    }
+
+    #[tokio::test]
     async fn full_or_disconnected_queue_reports_loss_without_blocking_producers() {
         let (sender, receiver) = mpsc::sync_channel(1);
         let journal = Journal {
             sender,
+            query_slots: Arc::new(tokio::sync::Semaphore::new(4)),
             health: Arc::new(Mutex::new(Health::default())),
             session: Arc::new("test".into()),
         };
