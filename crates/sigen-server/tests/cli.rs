@@ -273,11 +273,12 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
         );
         #[cfg(target_os = "linux")]
         {
+            // sd-notify terminates each state with a newline.
             let mut buffer = [0; 256];
             let length = notifications.recv(&mut buffer).unwrap();
-            assert_eq!(&buffer[..length], b"READY=1");
+            assert_eq!(&buffer[..length], b"READY=1\n");
             let length = notifications.recv(&mut buffer).unwrap();
-            assert_eq!(&buffer[..length], b"WATCHDOG=1");
+            assert_eq!(&buffer[..length], b"WATCHDOG=1\n");
         }
         assert!(
             Command::new("kill")
@@ -293,7 +294,7 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
                 let mut buffer = [0; 256];
                 let length = notifications.recv(&mut buffer).unwrap();
                 let message = String::from_utf8(buffer[..length].to_vec()).unwrap();
-                let stopping = message == "STOPPING=1";
+                let stopping = message == "STOPPING=1\n";
                 messages.push(message);
                 if stopping {
                     break;
@@ -302,7 +303,7 @@ fn graceful_shutdown_flushes_journal_and_restart_preserves_history() {
             assert!(
                 messages
                     .iter()
-                    .all(|message| matches!(message.as_str(), "WATCHDOG=1" | "STOPPING=1"))
+                    .all(|message| matches!(message.as_str(), "WATCHDOG=1\n" | "STOPPING=1\n"))
             );
         }
         let deadline = Instant::now() + Duration::from_secs(5);
