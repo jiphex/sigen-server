@@ -33,9 +33,13 @@ struct Args {
     /// Print one JSON object per line (JSONL), including all event fields
     #[arg(long)]
     json: bool,
-    /// Display timezone (IANA name, e.g. America/New_York); defaults to local timezone
-    #[arg(long)]
-    tz: Option<String>,
+    /// Display timezone (IANA name, e.g. America/New_York); defaults to local timezone; ignored for JSON output
+    #[arg(long, value_parser = parse_timezone)]
+    tz: Option<jiff::tz::TimeZone>,
+}
+
+fn parse_timezone(name: &str) -> Result<jiff::tz::TimeZone, String> {
+    jiff::tz::TimeZone::get(name).map_err(|e| format!("invalid timezone '{name}': {e}"))
 }
 
 fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
@@ -72,11 +76,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     } else if events.is_empty() {
         writeln!(output, "No events found.")?;
     } else {
-        let tz = match args.tz.as_deref() {
-            Some(name) => jiff::tz::TimeZone::get(name)
-                .map_err(|e| format!("invalid timezone '{name}': {e}"))?,
-            None => jiff::tz::TimeZone::system(),
-        };
+        let tz = args.tz.unwrap_or_else(jiff::tz::TimeZone::system);
         for event in &events {
             let timestamp = Timestamp::from_millisecond(event.timestamp_unix_ms)
                 .map_err(|e| format!("invalid timestamp {}: {}", event.timestamp_unix_ms, e))?

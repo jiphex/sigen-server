@@ -185,3 +185,13 @@ fn validates_options_and_explicit_path_overrides_environment() {
         4
     );
 }
+
+#[test]
+fn invalid_timezone_is_rejected_even_for_empty_or_json_results() {
+    let fixture = Fixture::new();
+    for extra in [vec![], vec!["--before", "1"], vec!["--json"]] {
+        let mut args = vec!["--tz", "Invalid/Timezone"];
+        args.extend(extra);
+        assert_eq!(fixture.run(&args).status.code(), Some(2));
+    }
+}
