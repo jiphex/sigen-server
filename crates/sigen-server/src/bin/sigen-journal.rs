@@ -2,6 +2,7 @@
 mod query;
 
 use clap::Parser;
+use jiff::Timestamp;
 use rusqlite::{Connection, OpenFlags};
 use std::{
     io::{self, Write},
@@ -32,6 +33,9 @@ struct Args {
     /// Print one JSON object per line (JSONL), including all event fields
     #[arg(long)]
     json: bool,
+    /// Display timezone (IANA name, e.g. America/New_York); defaults to local timezone
+    #[arg(long)]
+    tz: Option<String>,
 }
 
 fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
@@ -68,17 +72,22 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     } else if events.is_empty() {
         writeln!(output, "No events found.")?;
     } else {
+        let tz = match args.tz.as_deref() {
+            Some(name) => jiff::tz::TimeZone::get(name)
+                .map_err(|e| format!("invalid timezone '{name}': {e}"))?,
+            None => jiff::tz::TimeZone::system(),
+        };
         for event in &events {
-            let timestamp: Option<String> = connection.query_row(
-                "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', ?1 / 1000.0, 'unixepoch')",
-                [event.timestamp_unix_ms],
-                |row| row.get(0),
-            )?;
+            let timestamp = Timestamp::from_millisecond(event.timestamp_unix_ms)
+                .map_err(|e| format!("invalid timestamp {}: {}", event.timestamp_unix_ms, e))?
+                .to_zoned(tz.clone())
+                .strftime("%Y-%m-%dT%H:%M:%S%.3f%z")
+                .to_string();
             writeln!(
                 output,
                 "#{} {} [{}] {} {} inverter={} {}",
                 event.id,
-                timestamp.unwrap_or_else(|| event.timestamp_unix_ms.to_string()),
+                timestamp,
                 event.category,
                 event.kind,
                 event.target,

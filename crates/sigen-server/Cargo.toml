@@ -18,6 +18,7 @@ serde_json = "1"
 sigen-modbus = { path = "../sigen-modbus" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time", "io-util"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
+jiff.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tracing-journald = "0.3"

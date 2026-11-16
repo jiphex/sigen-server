@@ -638,13 +638,10 @@ cargo run -p sigen-server --bin sigen-journal -- ./sigen-events.sqlite3 --limit 
 sigen-journal /path/to/events.sqlite3 --category alert
 sigen-journal --category control --before 123 --limit 50
 sigen-journal --json
+sigen-journal --tz America/New_York
 ```
 
-Results are newest first, with UTC timestamps, event IDs, category, kind, target,
-unit, and structured details. The default limit is 50 (maximum 100). When more
-events exist, text output prints the `--before` cursor for the next page. `--json`
-prints one JSON object per line (JSONL), including all event fields; no matches
-produce no output. Categories match the
+Results are newest first. Text output timestamps are formatted in the selected timezone (default local timezone; override with `--tz`, e.g. `America/New_York` or `UTC`). Event IDs, category, kind, target, unit, and structured details are shown. The default limit is 50 (maximum 100). When more events exist, text output prints the `--before` cursor for the next page. `--json` prints one JSON object per line (JSONL), including all event fields; no matches produce no output. Categories match the
 HTTP API. The tool needs permission to read the journal and its SQLite sidecars.
 With Nix, use `nix run .#sigen-journal -- /path/to/events.sqlite3`.
 The container also includes `/sigen-journal`; select it with
