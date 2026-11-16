@@ -40,7 +40,7 @@
   --alert-text: #fff;
   font-family: system-ui, sans-serif;
   --instrument-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 87.5%;
+  font-size: 100%;
   color: var(--text);
   background: var(--page);
   color-scheme: light;
@@ -268,3 +268,10 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12
 #electrical-panel th, #electrical-panel td { padding: 12px 10px; text-align: left; border: 1px solid var(--border); }
 #electrical-panel th { background: var(--surface-alt); }
 #electrical-panel td { font-family: var(--instrument-font); white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .device-display { grid-template-columns: minmax(0, 1fr); }
+  .device-display .device-freshness { border-left: 0; border-top: 1px solid var(--screen-divider); }
+  .alert-row { grid-template-columns: minmax(0, 1fr); }
+  .alert-row > span { border-left: 0; border-top: 1px solid var(--divider); }
+}

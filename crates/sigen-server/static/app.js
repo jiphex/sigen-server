@@ -3,7 +3,7 @@ const demo = new URLSearchParams(window.location.search).get('demo') === '1' ? c
 let busy = false, latest = null, savingAlert = false, updatesPaused = false;
 let alertSignature = '';
 let statusRefresh = null, statusGeneration = 0;
-let journalBusy = false, journalLoaded = false, journalBefore = null;
+let journalBusy = false, journalLoaded = false, journalBefore = null, journalPages = [], journalCurrent = null, journalCategory = "";
 const emsNames = {0:'Maximum self-consumption',1:'AI',2:'Time of use',5:'Full feed-in',7:'Remote EMS',9:'Custom'};
 const fmt = (n, unit, digits=1) => `${Number(n).toFixed(digits)} ${unit}`;
 function setText(id, text) {
@@ -20,6 +20,9 @@ function restoreFocus(target) {
 }
 function controls(c) {
   if (!c || busy) return;
+  const current = `Current: remote EMS ${c.remote_ems_enabled ? 'enabled' : 'disabled'}; mode ${c.remote_ems_mode}; backup reserve ${c.backup_soc_percent}%.`;
+  const edited = $('remote').value !== String(c.remote_ems_enabled) || $('mode').value !== String(c.remote_ems_mode) || Number($('backup').value) !== c.backup_soc_percent;
+  setText('settings-current', current + (document.activeElement.closest('form') && edited ? ' Unapplied edits.' : ''));
   // Keep edits intact while the user is interacting with a form.
   if (!document.activeElement.closest('form')) {
     $('remote').value = String(c.remote_ems_enabled);
@@ -67,7 +70,7 @@ function display(s) {
   showError('error', s.last_error);
   const age = s.last_success_unix ? Math.max(0, Math.floor(Date.now()/1000)-s.last_success_unix) : null;
   $('freshness').textContent = age === null ? 'Waiting for data…' : `${s.online ? 'Updated' : 'Stale data from'} ${age}s ago.`;
-  $('controls').disabled = busy || s.read_only || !s.online || !s.controls;
+  $('controls').disabled = busy || updatesPaused || s.read_only || !s.online || !s.controls;
   controls(s.controls);
   if (s.read_only) {
     setText('control-result', !s.controls ? 'Waiting for plant settings…'
@@ -176,7 +179,7 @@ function showDetails(s) {
   }
 }
 async function send(command) {
-  if (busy || latest?.read_only) return;
+  if (busy || updatesPaused || latest?.read_only) return;
   const focused = document.activeElement;
   busy = true; $('controls').disabled = true;
   $('control-result').className = '';
@@ -206,8 +209,9 @@ $('backup-form').addEventListener('submit',e=>{e.preventDefault();send({action:'
 $('updates-toggle').addEventListener('click', () => {
   updatesPaused = !updatesPaused;
   setText('updates-toggle', updatesPaused ? 'Resume updates' : 'Pause updates');
-  setText('updates-status', updatesPaused ? 'Automatic updates are paused.' : 'Automatic updates run every 3 seconds.');
-  if (!updatesPaused) refresh();
+  setText('updates-status', updatesPaused ? 'Updates paused — readings may be outdated. Resume updates before changing plant settings.' : 'Automatic updates run every 3 seconds.');
+  if (updatesPaused) $('controls').disabled = true;
+  else refresh(true);
 });
 $('active-alerts-link').addEventListener('click', () => { $('alerts-heading').focus(); });
 if (demo) {
@@ -228,7 +232,10 @@ if (demo) {
   $('live-links').hidden = true;
 }
 refresh();
-setInterval(() => { if (!updatesPaused) return refresh(); }, 3000);
+setInterval(() => {
+  if (!updatesPaused) return refresh();
+  if (latest?.last_success_unix) setText('freshness', `Updates paused · last reading ${Math.max(0, Math.floor(Date.now()/1000) - latest.last_success_unix)}s ago.`);
+}, 3000);
 
 function alertStatusIcon(status) {
   const paths = {
@@ -254,9 +261,10 @@ function alertStatusIcon(status) {
 function showAlerts(alerts) {
   if (!alerts || savingAlert) return;
   const active = alerts.items.filter(a => a.active);
-  const signature = JSON.stringify(active.map(a => [a.id, a.name, a.known]));
+  const signature = JSON.stringify(active.map(a => [a.id, a.name, a.known, a.severity]));
   if (signature !== alertSignature) {
     $('alert-summary').textContent = active.length ? `${active.length} active alert${active.length === 1 ? '' : 's'}` : 'No active alerts.';
+    if (active.some(a => a.severity === 'critical')) $('alert-summary').textContent += ' · Critical alert';
     $('alert-summary').className = active.length ? 'has-active-alerts' : '';
     if (active.length) {
       $('alert-summary').prepend(alertStatusIcon('active'));
@@ -292,7 +300,7 @@ function showAlerts(alerts) {
     row.className = alert.active ? 'alert-row alert-row-active' : 'alert-row';
     row.children[0].children[0].checked = alert.enabled;
     const state = row.children[1];
-    const text = !alert.enabled ? 'Off' : alert.active ? `Active${alert.known ? '' : ' (last known)'}` : alert.known ? 'OK' : 'Waiting for data';
+    const text = !alert.enabled ? 'Off' : alert.active ? `${alert.severity === 'critical' ? 'Critical' : 'Active'}${alert.known ? '' : ' (last known)'}` : alert.known ? 'OK' : 'Waiting for data';
     const since = alert.since_unix ? ` since ${new Date(alert.since_unix * 1000).toLocaleString()}` : '';
     const classifications = alert.vendor_severity ? `Device severity: ${alert.vendor_severity}; notification priority: ${alert.severity}` : '';
     state.title = [since.trim(), classifications].filter(Boolean).join(' · ');
@@ -376,15 +384,17 @@ function eventDescription(event) {
 
 // Fetch on demand rather than replacing history during status polling, preserving
 // the page and expanded event details while someone reads older events.
-async function loadJournal(before = null) {
+async function loadJournal(before = null, previous = false) {
   if (demo || journalBusy) return;
   const focused = document.activeElement;
   journalBusy = true;
   $('journal-events').setAttribute('aria-busy', 'true');
   $('journal-refresh').disabled = true;
   $('journal-older').disabled = true;
+  $('journal-previous').disabled = true;
   $('journal-category').disabled = true;
   showError('journal-error', '');
+  setText('journal-page-status', 'Loading events… Previous results remain visible.');
   try {
     const query = new URLSearchParams({limit: '25'});
     if ($('journal-category').value) query.set('category', $('journal-category').value);
@@ -411,6 +421,11 @@ async function loadJournal(before = null) {
       row.append(time, title, device, details);
       return row;
     });
+    if (previous) journalPages.pop();
+    else if (before != null) journalPages.push(journalCurrent);
+    else journalPages = [];
+    journalCurrent = before;
+    journalCategory = $('journal-category').value;
     $('journal-events').replaceChildren(...rows);
     journalBefore = page.next_before;
     journalLoaded = true;
@@ -419,13 +434,16 @@ async function loadJournal(before = null) {
       ? `Showing ${page.events.length} ${before == null ? 'newest' : 'older'} events.${page.next_before == null ? ' End of history.' : ''}`
       : 'No events match this filter.');
   } catch (error) {
+    $('journal-category').value = journalCategory;
     showError('journal-error', error.message);
+    setText('journal-page-status', 'Could not load events. Previous results retained.');
   } finally {
     journalBusy = false;
     $('journal-events').setAttribute('aria-busy', 'false');
     $('journal-refresh').disabled = false;
     $('journal-older').disabled = journalBefore == null;
     $('journal-category').disabled = false;
+    $('journal-previous').disabled = journalPages.length === 0;
     restoreFocus(focused?.disabled ? $('journal-refresh') : focused);
   }
 }
@@ -434,9 +452,9 @@ $('journal-panel').addEventListener('toggle', () => {
 });
 $('journal-refresh').addEventListener('click', () => loadJournal());
 $('journal-category').addEventListener('change', () => {
-  journalBefore = null;
-  $('journal-events').replaceChildren();
-  setText('journal-page-status', 'Loading events…');
   loadJournal();
 });
 $('journal-older').addEventListener('click', () => loadJournal(journalBefore));
+
+$('journal-previous').addEventListener('click', () => loadJournal(journalPages.at(-1), true));
+for (const id of ['remote', 'mode', 'backup']) $(id).addEventListener('input', () => { if (latest?.controls) controls(latest.controls); });

@@ -48,6 +48,7 @@ test('event journal loads on demand, filters and pages without polling away hist
   assert.match(calls.at(-1), /before=2/);
   assert.equal(ui.nodes['journal-events'].children.length, 1);
   assert.equal(ui.nodes['journal-older'].disabled, true);
+  assert.equal(ui.nodes['journal-previous'].disabled, false);
   assert.match(ui.nodes['journal-page-status'].textContent, /End of history/);
   vm.runInContext("journalHealth({dropped_total: 2, last_error: 'disk full'})", ui.context);
   assert.match(ui.nodes['journal-health'].textContent, /2 events lost.*disk full/);
@@ -281,7 +282,7 @@ test('users can pause automatic updates and keyboard links move focus to their d
   const pausedRequests = requests;
   await ui.tick();
   assert.equal(requests, pausedRequests);
-  assert.equal(ui.nodes['updates-status'].textContent, 'Automatic updates are paused.');
+  assert.equal(ui.nodes['updates-status'].textContent, 'Updates paused — readings may be outdated. Resume updates before changing plant settings.');
   assert.equal(ui.nodes['updates-toggle'].textContent, 'Resume updates');
   ui.nodes['updates-toggle'].listeners.click();
   assert.equal(requests, pausedRequests + 1);
@@ -486,4 +487,25 @@ test('timed out mutations and history requests release UI state', async () => {
   assert.equal(vm.runInContext('savingAlert', ui.context), false);
   await vm.runInContext('loadJournal()', ui.context);
   assert.equal(ui.nodes['journal-refresh'].disabled, false);
+});
+
+
+test('critical alerts and unapplied settings are visible', async () => {
+  const ui = dashboard('?demo=1', () => { throw new Error('unexpected fetch'); });
+  await ui.tick();
+  const state = simulator().snapshot();
+  state.alerts.items[0].active = true;
+  state.alerts.items[0].severity = 'critical';
+  ui.context.reviewState = state;
+  vm.runInContext('display(reviewState)', ui.context);
+  assert.match(ui.nodes['alert-summary'].textContent, /Critical/);
+  assert.match(ui.nodes.alerts.children[0].textContent, /critical/i);
+  ui.document.activeElement = ui.nodes['backup-form'];
+  ui.nodes.backup.value = '42';
+  vm.runInContext('controls(reviewState.controls)', ui.context);
+  assert.match(ui.nodes['settings-current'].textContent, /Current:.*Unapplied edits/);
+  ui.nodes['updates-toggle'].listeners.click();
+  assert.equal(ui.nodes.controls.disabled, true);
+  await ui.tick();
+  assert.match(ui.nodes.freshness.textContent, /paused/);
 });
