@@ -246,9 +246,9 @@ impl Alerts {
         Ok(Self::new(settings, Some(path), poll_seconds + 30))
     }
     /// Replace settings via a synced sibling file so readers do not see partial JSON.
-    fn save(&self, settings: &Settings) -> io::Result<()> {
+    fn save(&self, settings: &Settings) -> io::Result<Option<io::Error>> {
         let Some(path) = &self.path else {
-            return Ok(());
+            return Ok(None);
         };
         let temp = path.with_extension(format!("{}.tmp", std::process::id()));
         let result = (|| {
@@ -256,7 +256,21 @@ impl Alerts {
             let mut file = fs::File::create(&temp)?;
             file.write_all(&serde_json::to_vec_pretty(settings).map_err(io::Error::other)?)?;
             file.sync_all()?;
-            fs::rename(&temp, path)
+            fs::rename(&temp, path)?;
+            // Rename has applied the settings. A later sync error must not leave
+            // live settings inconsistent with the file already visible on disk.
+            #[cfg(unix)]
+            {
+                let parent = path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or_else(|| std::path::Path::new("."));
+                Ok(fs::File::open(parent)
+                    .and_then(|directory| directory.sync_all())
+                    .err())
+            }
+            #[cfg(not(unix))]
+            Ok(None)
         })();
         if result.is_err() {
             let _ = fs::remove_file(temp);
@@ -390,7 +404,7 @@ pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<A
     let changed = settings.enabled(id) != enabled;
     settings.set(id, enabled);
     // Persist before changing live settings, keeping concurrent edits serialized.
-    alerts.save(&settings).inspect_err(|error| {
+    let durability_error = alerts.save(&settings).inspect_err(|error| {
         tracing::error!(%error, alert = id.key(), "Could not save alert settings");
     })?;
     tracing::info!(alert = id.key(), enabled, "Alert setting saved");
@@ -404,6 +418,11 @@ pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<A
         );
     }
     refresh(&mut s, hardware::now());
+    if let Some(error) = durability_error {
+        return Err(io::Error::other(format!(
+            "Settings applied, but directory sync failed: {error}"
+        )));
+    }
     Ok(s.alerts.clone())
 }
 

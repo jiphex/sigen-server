@@ -183,7 +183,7 @@ async fn update_alert(
     .map_err(|_| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "The server could not save the alert settings. No changes were applied.",
+            "The server could not durably save the alert settings. Refresh to check the current settings.",
         )
     })?;
     Ok(Json(alerts))
