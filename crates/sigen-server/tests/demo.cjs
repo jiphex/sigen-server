@@ -468,3 +468,22 @@ test('post-mutation refresh discards earlier status and requests a new snapshot'
   await refreshed;
   assert.match(ui.nodes['server-version'].textContent, /new/);
 });
+
+
+test('timed out mutations and history requests release UI state', async () => {
+  const ui = dashboard('', async (url, options) => {
+    assert.ok(options.signal);
+    if (url === '/api/status') return {ok: true, json: async () => simulator().snapshot()};
+    const error = new Error('Request timed out');
+    error.name = 'TimeoutError';
+    throw error;
+  });
+  await ui.tick();
+  await vm.runInContext('send({action:"backup_soc",percent:25})', ui.context);
+  assert.match(ui.nodes['control-result'].textContent, /may have executed/);
+  assert.equal(vm.runInContext('busy', ui.context), false);
+  await vm.runInContext('saveAlert("battery_alarm", false)', ui.context);
+  assert.equal(vm.runInContext('savingAlert', ui.context), false);
+  await vm.runInContext('loadJournal()', ui.context);
+  assert.equal(ui.nodes['journal-refresh'].disabled, false);
+});

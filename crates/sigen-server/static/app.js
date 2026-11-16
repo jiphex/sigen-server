@@ -186,7 +186,7 @@ async function send(command) {
     if (demo) {
       result = demo.send(command);
     } else {
-      const response = await fetch('/api/control', {method:'POST',headers:{'Content-Type':'application/json','X-Sigen-Control':'1'},body:JSON.stringify(command)});
+      const response = await fetch('/api/control', {signal: AbortSignal.timeout(65000), method:'POST',headers:{'Content-Type':'application/json','X-Sigen-Control':'1'},body:JSON.stringify(command)});
       result = await response.json();
       if (!response.ok) throw new Error(result.error || `Control failed (${response.status})`);
     }
@@ -195,7 +195,8 @@ async function send(command) {
     if(latest) latest.controls = result.controls;
     controls(result.controls);
   } catch(e) {
-    $('control-result').textContent = e.message;
+    $('control-result').textContent = e.name === 'TimeoutError'
+      ? 'Control timed out; it may have executed. Check refreshed readback before retrying.' : e.message;
     $('control-result').className = 'failed';
   } finally { busy = false; await refresh(true); restoreFocus(focused); }
 }
@@ -330,7 +331,7 @@ async function saveAlert(id, enabled) {
     if (demo) {
       demo.setAlert(id, enabled);
     } else {
-      const response = await fetch('/api/alerts', {method:'POST', headers:{'Content-Type':'application/json','X-Sigen-Control':'1'}, body:JSON.stringify({id,enabled})});
+      const response = await fetch('/api/alerts', {signal: AbortSignal.timeout(10000), method:'POST', headers:{'Content-Type':'application/json','X-Sigen-Control':'1'}, body:JSON.stringify({id,enabled})});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'The server could not save the alert settings.');
     }
@@ -388,7 +389,7 @@ async function loadJournal(before = null) {
     const query = new URLSearchParams({limit: '25'});
     if ($('journal-category').value) query.set('category', $('journal-category').value);
     if (before != null) query.set('before', String(before));
-    const response = await fetch(`/api/events?${query}`, {cache: 'no-store'});
+    const response = await fetch(`/api/events?${query}`, {cache: 'no-store', signal: AbortSignal.timeout(10000)});
     if (!response.ok) throw new Error(`Could not load event history (${response.status}). Try again.`);
     const page = await response.json();
     const rows = page.events.map(event => {
