@@ -118,3 +118,20 @@ fn main() -> std::process::ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bundled_database_resolves_named_zone_without_system_files() {
+        let database = jiff::tz::TimeZoneDatabase::bundled();
+        let timezone = database.get("America/New_York").unwrap();
+        let timestamp = jiff::Timestamp::from_millisecond(1700000000123).unwrap();
+        assert_eq!(
+            timestamp
+                .to_zoned(timezone)
+                .strftime("%Y-%m-%dT%H:%M:%S%.3f%z")
+                .to_string(),
+            "2023-11-14T17:13:20.123-0500"
+        );
+    }
+}

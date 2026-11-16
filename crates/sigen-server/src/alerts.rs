@@ -246,7 +246,11 @@ impl Alerts {
         Ok(Self::new(settings, Some(path), poll_seconds + 30))
     }
     /// Replace settings via a synced sibling file so readers do not see partial JSON.
-    fn save(&self, settings: &Settings) -> io::Result<Option<io::Error>> {
+    fn save(
+        &self,
+        settings: &Settings,
+        sync: impl FnOnce(&std::path::Path) -> io::Result<()>,
+    ) -> io::Result<Option<io::Error>> {
         let Some(path) = &self.path else {
             return Ok(None);
         };
@@ -259,18 +263,11 @@ impl Alerts {
             fs::rename(&temp, path)?;
             // Rename has applied the settings. A later sync error must not leave
             // live settings inconsistent with the file already visible on disk.
-            #[cfg(unix)]
-            {
-                let parent = path
-                    .parent()
-                    .filter(|p| !p.as_os_str().is_empty())
-                    .unwrap_or_else(|| std::path::Path::new("."));
-                Ok(fs::File::open(parent)
-                    .and_then(|directory| directory.sync_all())
-                    .err())
-            }
-            #[cfg(not(unix))]
-            Ok(None)
+            let parent = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or_else(|| std::path::Path::new("."));
+            Ok(sync(parent).err())
         })();
         if result.is_err() {
             let _ = fs::remove_file(temp);
@@ -397,6 +394,24 @@ pub fn refresh(status: &mut Status, now: u64) {
 
 /// Persist a toggle before applying it; a failed save leaves live settings intact.
 pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<Alerts> {
+    set_enabled_with_sync(status, id, enabled, |parent| {
+        #[cfg(unix)]
+        {
+            fs::File::open(parent)?.sync_all()
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = parent;
+            Ok(())
+        }
+    })
+}
+fn set_enabled_with_sync(
+    status: &SharedStatus,
+    id: Id,
+    enabled: bool,
+    sync: impl FnOnce(&std::path::Path) -> io::Result<()>,
+) -> io::Result<Alerts> {
     let save_lock = status.read().expect("status lock").alerts.save_lock.clone();
     let _save = save_lock.lock().expect("alert settings lock");
     let alerts = status.read().expect("status lock").alerts.clone();
@@ -404,7 +419,7 @@ pub fn set_enabled(status: &SharedStatus, id: Id, enabled: bool) -> io::Result<A
     let changed = settings.enabled(id) != enabled;
     settings.set(id, enabled);
     // Persist before changing live settings, keeping concurrent edits serialized.
-    let durability_error = alerts.save(&settings).inspect_err(|error| {
+    let durability_error = alerts.save(&settings, sync).inspect_err(|error| {
         tracing::error!(%error, alert = id.key(), "Could not save alert settings");
     })?;
     tracing::info!(alert = id.key(), enabled, "Alert setting saved");
@@ -736,6 +751,35 @@ mod tests {
             assert!(!alert(&s, Id::BatteryAlarm).active);
         }
     }
+    #[test]
+    fn directory_sync_failure_preserves_applied_file_and_live_settings() {
+        let path =
+            std::env::temp_dir().join(format!("sigen-sync-failure-{}.json", std::process::id()));
+        let mut status = healthy();
+        status.alerts = Alerts::load(path.clone(), 15).unwrap();
+        let shared = Arc::new(RwLock::new(status));
+        let error = set_enabled_with_sync(&shared, Id::BatteryAlarm, false, |_| {
+            // The fault is injected only after the replacement is visible.
+            assert!(
+                !Alerts::load(path.clone(), 15)
+                    .unwrap()
+                    .settings
+                    .battery_alarm
+            );
+            Err(io::Error::other("injected directory sync failure"))
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("Settings applied"));
+        assert!(!shared.read().unwrap().alerts.settings.battery_alarm);
+        assert!(
+            !Alerts::load(path.clone(), 15)
+                .unwrap()
+                .settings
+                .battery_alarm
+        );
+        fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn waiting_settings_save_does_not_lock_status() {
         let shared = Arc::new(RwLock::new(healthy()));
