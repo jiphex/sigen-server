@@ -8,6 +8,7 @@ mod logging;
 mod metrics;
 mod model;
 mod mqtt;
+mod octopus;
 mod pushover;
 mod systemd;
 mod telemetry;
@@ -62,7 +63,7 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     };
     hardware::validate_control_timing(&modbus_config)?;
     let freshness_poll = poll + hardware::freshness_grace(&modbus_config).as_secs() - 30;
-    let energy_reader = energy::Reader::new(args.ha_url.as_deref(), args.ha_token_file.as_deref())?;
+    let energy_reader = energy::Source::from_args(&args)?;
     let notifier = pushover::Notifier::from_args(&args.pushover)?;
     let write_audit = Arc::new(audit::WriteAuditLog::open(&args.write_audit_file)?);
     let mut mqtt_config =

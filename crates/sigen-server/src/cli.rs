@@ -72,6 +72,18 @@ pub struct Cli {
     /// File containing a Home Assistant long-lived access token
     #[arg(long, env = "SIGEN_HA_TOKEN_FILE", requires = "ha_url")]
     pub ha_token_file: Option<PathBuf>,
+    /// Public Octopus import tariff code (E-1R-PRODUCT-REGION); alternative to HA
+    #[arg(long, env = "SIGEN_OCTOPUS_IMPORT_TARIFF", conflicts_with_all = ["ha_url", "ha_token_file"])]
+    pub octopus_import_tariff: Option<String>,
+    /// Public Octopus export tariff code; no API key required
+    #[arg(long, env = "SIGEN_OCTOPUS_EXPORT_TARIFF", conflicts_with_all = ["ha_url", "ha_token_file"])]
+    pub octopus_export_tariff: Option<String>,
+    /// Octopus account number (A-...); discovers electricity meters and tariffs
+    #[arg(long, env = "SIGEN_OCTOPUS_ACCOUNT", requires = "octopus_api_key_file", conflicts_with_all = ["ha_url", "ha_token_file", "octopus_import_tariff", "octopus_export_tariff"])]
+    pub octopus_account: Option<String>,
+    /// Protected file containing an Octopus API key (never pass the key itself on the command line)
+    #[arg(long, env = "SIGEN_OCTOPUS_API_KEY_FILE", requires = "octopus_account", conflicts_with_all = ["ha_url", "ha_token_file", "octopus_import_tariff", "octopus_export_tariff"])]
+    pub octopus_api_key_file: Option<PathBuf>,
     #[command(flatten)]
     pub pushover: PushoverArgs,
 }

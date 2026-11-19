@@ -41,16 +41,19 @@ function card(title, value, note) {
 function renderEnergy(s) {
   const root = document.getElementById('energy-meters');
   const energy = s.energy;
+  const source = energy?.source?.startsWith('octopus') ? 'Octopus API' : 'Home Assistant';
   const openSchedules = new Set(Array.from(root.querySelectorAll('details[open]')).map(d => d.dataset.schedule));
   const focusedSchedule = document.activeElement?.closest('details')?.dataset.schedule;
-  document.getElementById('energy-health').textContent = !energy ? 'Home Assistant tariffs are not configured.'
-    : `Home Assistant · ${energy.last_success_unix ? 'last updated ' + timeLabel(energy.last_success_unix * 1000) : 'waiting for first update'}`;
+  document.getElementById('energy-health').textContent = !energy ? 'Energy tariffs are not configured.'
+    : `${source} · ${energy.last_success_unix ? 'last updated ' + timeLabel(energy.last_success_unix * 1000) : 'waiting for first update'}`;
   document.getElementById('energy-error').textContent = energy?.last_error ?? '';
   root.replaceChildren();
   if (!energy) {
-    root.append(element('p', 'Configure the Home Assistant connection on the server to see rates and completed-day costs.'));
+    root.append(element('p', 'Configure Home Assistant or an Octopus tariff code on the server to see rates and completed-day costs.'));
     return;
   }
+  if (energy.source === 'octopus') root.append(element('p', 'Public Octopus rates · completed-day bills and account-specific Intelligent charging adjustments are unavailable. Tariff codes must be updated when your contract changes.'));
+  if (energy.source === 'octopus_account') root.append(element('p', 'Octopus account connected · meters and tariffs discovered automatically. Consumption can arrive late. Calculated costs are estimates; account credits, discounts and Intelligent dispatch adjustments are not included.'));
   if (!energy.meters.length) root.append(element('p', 'No electricity tariff data is available yet.'));
   const imports = energy.meters.filter(m => !m.is_export);
   const exports = energy.meters.filter(m => m.is_export);
@@ -65,12 +68,41 @@ function renderEnergy(s) {
     cards.append(card('Standing charge', v.fresh && meter.standing_charge_gbp_per_day != null ? gbp(meter.standing_charge_gbp_per_day) : '—', 'Per day · separate from unit rate'));
     cards.append(card(meter.is_export ? 'Live export revenue' : 'Live import cost', unique && v.hourly != null ? `${gbp(v.hourly)}/h` : '—', !unique ? 'Multiple tariffs: plant power cannot be assigned to a meter' : 'At current grid power · excludes standing charge'));
     const completed = meter.completed_day;
-    cards.append(card('Latest completed day', completed ? gbp(completed.cost_gbp) : '—', completed ? `${londonDate(completed.start)}${completed.consumption_kwh != null ? ' · ' + completed.consumption_kwh.toFixed(3) + ' kWh' : ''}${completed.standing_charge_gbp != null ? ' · includes ' + gbp(completed.standing_charge_gbp) + ' standing charge' : ' · standing charge breakdown unavailable'}` : 'No completed-day cost available'));
+    cards.append(card(completed?.estimated ? 'Latest complete day · estimated' : 'Latest completed day', completed ? gbp(completed.cost_gbp) : '—', completed ? `${londonDate(completed.start)}${completed.consumption_kwh != null ? ' · ' + completed.consumption_kwh.toFixed(3) + ' kWh' : ''}${completed.standing_charge_gbp != null ? ' · includes ' + gbp(completed.standing_charge_gbp) + ' standing charge' : ' · standing charge breakdown unavailable'}` : 'No completed-day cost available'));
     if (!meter.is_export) {
       cards.append(card('Today’s solar equivalent', unique && v.solar != null ? gbp(v.solar) : '—', 'Inverter generation at today’s flat import rate · comparison only'));
       cards.append(card('Today’s load equivalent', unique && v.load != null ? gbp(v.load) : '—', 'Plant load at today’s flat import rate · comparison only'));
     }
     section.append(cards);
+    if (meter.consumption_error) section.append(element('p', meter.consumption_error));
+    if (meter.daily_costs?.length) {
+      const history = element('details');
+      history.dataset.schedule = `${meter.id}:cost-history`;
+      history.open = openSchedules.has(history.dataset.schedule);
+      history.append(element('summary', 'Completed-day consumption and estimated costs'));
+      const scroll = element('div', null, 'table-scroll'); scroll.tabIndex = 0;
+      scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', 'Daily consumption and estimated costs');
+      const table = element('table'); table.append(element('caption', 'Complete days only · standing charge included · estimates, not invoices'));
+      const head = element('thead'), row = element('tr');
+      for (const title of ['Day', 'Energy', 'Standing charge', 'Estimated total']) { const th = element('th', title); th.scope = 'col'; row.append(th); }
+      head.append(row); table.append(head);
+      const body = element('tbody');
+      for (const day of meter.daily_costs) {
+        const row = element('tr');
+        for (const text of [londonDate(day.start), `${day.consumption_kwh.toFixed(3)} kWh`, day.standing_charge_gbp != null ? gbp(day.standing_charge_gbp) : '—', gbp(day.cost_gbp)]) row.append(element('td', text));
+        body.append(row);
+      }
+      table.append(body); scroll.append(table); history.append(scroll); section.append(history);
+    }
+    if (meter.consumption?.length) {
+      const usage = element('details'); usage.dataset.schedule = `${meter.id}:consumption`;
+      usage.open = openSchedules.has(usage.dataset.schedule);
+      usage.append(element('summary', `Meter consumption · ${meter.consumption.length} reported intervals`));
+      usage.append(element('p', 'Latest 48 reported intervals shown. Missing intervals are not assumed to be zero. Up to seven days plus today are available in Status JSON.'));
+      const list = element('ul');
+      for (const c of meter.consumption.slice(-48)) list.append(element('li', `${timeLabel(c.interval_start)} – ${timeLabel(c.interval_end)} · ${c.consumption.toFixed(3)} kWh`));
+      usage.append(list); section.append(usage);
+    }
     for (const schedule of meter.schedules) {
       const details = element('details');
       details.dataset.schedule = `${meter.id}:${schedule.day}`;

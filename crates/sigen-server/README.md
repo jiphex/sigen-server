@@ -775,3 +775,73 @@ dates before applying a schedule. Credentials and raw HA attributes are never
 included in the snapshot. HTTP redirects are disabled; request errors are
 reported without headers, tokens or response bodies. HA authentication and
 connectivity failures do not interrupt inverter monitoring.
+
+### Direct Octopus API alternative
+
+To fetch public tariff rates without Home Assistant, set
+`SIGEN_OCTOPUS_IMPORT_TARIFF` and optionally `SIGEN_OCTOPUS_EXPORT_TARIFF` to the
+full single-register electricity tariff codes shown in your Octopus account or
+bill (for example `E-1R-AGILE-24-10-01-J`). The equivalent flags are
+`--octopus-import-tariff` and `--octopus-export-tariff`. Export-only configuration
+is also supported. These settings cannot be combined with the Home Assistant
+settings; select one source explicitly. No Octopus API key is required.
+
+The server fetches `standard-unit-rates` and `standing-charges` from the public
+Octopus REST API every minute, using direct-debit prices where payment methods
+are distinguished. Prices arrive in pence and are converted to GBP. The energy
+page and `energy.source` identify the selected source (`octopus` or
+`home_assistant`). Schedules are clipped to yesterday, today and tomorrow in
+Europe/London, including daylight-saving changes. Unpublished future rates stay
+empty; missing or stale current rates never become zero-price energy.
+
+The public connection provides tariff information only. Completed-day bills
+require meter consumption and are unavailable with this source. Account-specific
+Intelligent charging adjustments, HA price caps, automatic tariff/account
+discovery and dual-register Economy 7 tariffs are not supported. Update the
+configured tariff codes when your contract changes. For automatic discovery and consumption, use the authenticated account mode below.
+
+
+### Standalone Octopus account and consumption
+
+Configure only your Octopus account number and a protected key file; Home
+Assistant and manual tariff codes are not required:
+
+```sh
+SIGEN_OCTOPUS_ACCOUNT=A-YOURACCOUNT \
+SIGEN_OCTOPUS_API_KEY_FILE=/path/to/octopus-api-key \
+cargo run -p sigen-server -- --address 192.168.1.50:502
+```
+
+Equivalent flags: `--octopus-account` and `--octopus-api-key-file`. Both are
+required together and cannot be combined with HA settings or manual tariff
+codes. Obtain the account number and API key from your Octopus account's API
+access page. The key file must contain only the key; keep it outside the
+repository, readable only by the server user (`chmod 600`). It is read once at
+startup. No credentials, postal address or raw account response are exported or
+logged. Basic authentication is attached only to fixed-origin private account
+and consumption requests, never public tariff requests or pagination URLs.
+
+`energy.source` is `octopus_account`. Active electricity meter points and tariff
+agreements are discovered at each poll; moved-out properties are excluded. The
+server reads up to seven completed London days plus today's available
+half-hourly consumption. `/api/status` includes each meter's `consumption`,
+`daily_costs`, latest `completed_day`, and `consumption_error` when usage is
+delayed, incomplete or unavailable. The page shows daily consumption/cost
+history and the latest 48 reported intervals. This supports electricity import
+and export, not gas or dual-register Economy 7.
+
+Daily costs are estimates from interval consumption, the historical agreement's
+VAT-inclusive rates, and one standing charge for the day. Consumption is rounded
+to 0.01 kWh using half-even rounding before applying each interval's rate; the
+final day total is rounded to pennies. Tariff changes are bounded by their
+agreement dates. A day is priced only when every interval and its unit rate,
+plus the full day's standing charge, are present without overlaps or gaps.
+London daylight-saving days have 46 or 50 half-hours. Older complete days remain
+labelled with their actual date when yesterday's readings are delayed.
+
+Consumption failures leave current tariffs available and show a separate error.
+Missing readings are not zero usage. Account credits, discounts, billing
+corrections and Intelligent dispatch adjustments are excluded, so these values
+are not invoices. Account/key authentication failures are reported without
+response bodies or credentials. As with public tariffs, discovery does not
+require an inverter connection to show completed-day usage and costs.

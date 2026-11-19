@@ -6,6 +6,7 @@ use tokio::sync::watch;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Status {
+    pub source: &'static str,
     pub available: bool,
     pub last_success_unix: Option<u64>,
     pub last_error: Option<String>,
@@ -20,6 +21,11 @@ pub struct Meter {
     pub standing_charge_gbp_per_day: Option<f64>,
     pub schedules: Vec<Schedule>,
     pub completed_day: Option<CompletedDay>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub consumption: Vec<Consumption>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub daily_costs: Vec<CompletedDay>,
+    pub consumption_error: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rate {
@@ -37,11 +43,18 @@ pub struct Schedule {
     pub tariff_code: Option<String>,
     pub rates: Vec<Rate>,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Consumption {
+    pub interval_start: jiff::Timestamp,
+    pub interval_end: jiff::Timestamp,
+    pub consumption: f64,
+}
 #[derive(Clone, Debug, Serialize)]
 pub struct CompletedDay {
     pub start: jiff::Timestamp,
     pub consumption_kwh: Option<f64>,
     pub cost_gbp: f64,
+    pub estimated: bool,
     pub standing_charge_gbp: Option<f64>,
 }
 #[derive(Deserialize)]
@@ -180,6 +193,7 @@ fn parse(entities: &[Entity]) -> Result<Vec<Meter>, String> {
                 } else {
                     return None;
                 },
+                estimated: false,
                 standing_charge_gbp: e.attributes["standing_charge"].as_f64(),
             })
         });
@@ -193,6 +207,9 @@ fn parse(entities: &[Entity]) -> Result<Vec<Meter>, String> {
                 .and_then(number),
             schedules,
             completed_day,
+            consumption: Vec::new(),
+            daily_costs: Vec::new(),
+            consumption_error: None,
         });
     }
     if meters.is_empty() {
@@ -200,12 +217,49 @@ fn parse(entities: &[Entity]) -> Result<Vec<Meter>, String> {
     }
     Ok(meters)
 }
+pub enum Source {
+    HomeAssistant(Reader),
+    Octopus(crate::octopus::Reader),
+}
+impl Source {
+    pub fn from_args(args: &crate::cli::Cli) -> Result<Option<Self>, String> {
+        let ha = Reader::new(args.ha_url.as_deref(), args.ha_token_file.as_deref())?;
+        let octopus = crate::octopus::Reader::from_args(args)?;
+        match (ha, octopus) {
+            (Some(_), Some(_)) => Err("Choose either Home Assistant or Octopus tariffs".into()),
+            (Some(reader), None) => Ok(Some(Self::HomeAssistant(reader))),
+            (None, Some(reader)) => Ok(Some(Self::Octopus(reader))),
+            (None, None) => Ok(None),
+        }
+    }
+    fn name(&self) -> &'static str {
+        match self {
+            Self::HomeAssistant(_) => "home_assistant",
+            Self::Octopus(reader) => {
+                if reader.has_account() {
+                    "octopus_account"
+                } else {
+                    "octopus"
+                }
+            }
+        }
+    }
+    async fn read(&self) -> Result<Vec<Meter>, String> {
+        match self {
+            Self::HomeAssistant(reader) => reader.read().await,
+            Self::Octopus(reader) => reader.read().await,
+        }
+    }
+}
 pub fn start(
-    reader: Reader,
+    reader: Source,
     status: SharedStatus,
     mut stop: watch::Receiver<bool>,
 ) -> tokio::task::JoinHandle<()> {
-    status.write().expect("status lock").energy = Some(Status::default());
+    status.write().expect("status lock").energy = Some(Status {
+        source: reader.name(),
+        ..Status::default()
+    });
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
