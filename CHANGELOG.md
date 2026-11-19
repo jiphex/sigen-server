@@ -1,5 +1,18 @@
 # Release notes
 
+## 1.0.6 — 2026-11-19
+
+### Added
+
+- Energy costs page with Home Assistant tariffs or standalone Octopus API access.
+- Octopus account discovery, half-hourly consumption and estimated completed-day costs.
+- MQTT energy costs and tariff sensors with Home Assistant discovery and independent freshness.
+- NixOS energy settings with systemd credentials for API keys and tokens.
+
+### Changed
+
+- Server, journal CLI, and simulator report version `1.0.6`.
+
 ## 1.0.5 — 2026-11-16
 
 ### Added
