@@ -116,6 +116,30 @@ store. The environment file uses systemd `KEY=value` syntax and should be
 readable only by root. Its settings override `environment`; `extraArgs` override
 environment settings.
 
+For standalone Octopus account discovery and consumption, add:
+
+```nix
+services.sigen-server.energy = {
+  octopusAccount = "A-YOURACCOUNT";
+  octopusApiKeyFile = "/run/secrets/octopus-api-key";
+};
+```
+
+Provision the key file separately, containing only the API key and readable only
+by root. The module uses systemd `LoadCredential` to copy it into the service's
+private credentials directory; the dynamic service user can read that copy.
+Use a quoted runtime path as shown, not a Nix path literal or `builtins.readFile`,
+so the key never enters the Nix store. No Home Assistant configuration or manual
+tariff codes are needed. MQTT costs are included when MQTT is enabled through
+the existing environment settings.
+
+Alternatively, set `energy.octopusImportTariff` and optionally
+`energy.octopusExportTariff` for public rates without a key, or
+`energy.homeAssistantUrl` and `energy.homeAssistantTokenFile` for HA. Choose one
+source; the server rejects mixed or incomplete configuration. Token files use
+the same systemd credential mechanism. The generic `environment`,
+`environmentFile` and `extraArgs` remain available with their existing precedence.
+
 After rebuilding NixOS, inspect the service with:
 
 ```sh
