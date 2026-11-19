@@ -1,6 +1,6 @@
 [package]
 name = "sigen-server"
-version = "1.0.6"
+version = "1.0.7"
 license = "BSD-3-Clause"
 edition = "2024"
 default-run = "sigen-server"

@@ -1,5 +1,16 @@
 # Release notes
 
+## 1.0.7 — 2026-11-19
+
+### Fixed
+
+- Complete the mock MQTT broker handshake before shutdown to avoid a Linux TCP
+  reset race in the offline-inverter cost test observed during Nix builds.
+
+### Changed
+
+- Server, journal CLI, and simulator report version `1.0.7`.
+
 ## 1.0.6 — 2026-11-19
 
 ### Added
