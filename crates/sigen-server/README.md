@@ -845,3 +845,27 @@ corrections and Intelligent dispatch adjustments are excluded, so these values
 are not invoices. Account/key authentication failures are reported without
 response bodies or credentials. As with public tariffs, discovery does not
 require an inverter connection to show completed-day usage and costs.
+
+### MQTT energy costs
+
+When MQTT and an energy source are configured, the retained `<prefix>/state`
+JSON includes a compact `energy` object. Each meter has its current rate
+(`current_rate_gbp_per_kwh`), daily standing charge, live grid cost/revenue per
+hour, and latest `completed_day` cost with its date, consumption, standing-charge
+breakdown and `estimated` flag. Meter keys are `energy_` followed by the meter
+ID's UTF-8 bytes encoded as hexadecimal. No account credentials, raw consumption
+history or tariff schedules are added to MQTT.
+
+Home Assistant discovery adds four sensors per meter: rate, standing charge,
+live cost/revenue, and completed-day cost/earnings. The completed-day sensor's
+attributes include its date and estimate flag; it is a dated value, not a
+cumulative Energy dashboard cost counter. Currency values use GBP, GBP/kWh,
+GBP/day or GBP/h as appropriate, including negative rates and earnings.
+
+Tariff freshness is independent of the inverter connection: rates and
+completed-day costs remain available with an offline inverter. After three
+minutes without fresh tariff data, monetary values become null and their HA
+entities unavailable. Live cost/revenue additionally requires fresh grid power,
+a rate covering the current time, and exactly one meter in that direction.
+Unconfigured export tariffs have no export sensors. Existing MQTT diagnostics
+and discovery entities are otherwise unchanged.

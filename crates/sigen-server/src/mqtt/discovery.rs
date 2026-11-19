@@ -142,6 +142,7 @@ pub fn payload(config: &Config, status: &Status) -> Value {
                 {"topic":format!("{}/state",config.prefix),"value_template":format!("{{{{ 'online' if value_json.alerts.items[{index}].known else 'offline' }}}}")}],
             "availability_mode":"all"}));
     }
+    super::energy::discovery(config, status, &mut components);
     // Extra availability prevents stale controls after an uncertain write.
     let controls_availability = json!([
         {"topic":format!("{}/availability",config.prefix)},

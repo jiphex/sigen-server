@@ -437,3 +437,171 @@ fn disconnected_grid_sensor_exports_null_and_no_metric() {
     assert!(serde_json::to_value(s.snapshot()).unwrap()["readings"]["grid_power_watts"].is_null());
     assert!(!crate::metrics::render(&s).contains("sigen_grid_power_watts"));
 }
+
+fn cost_status() -> Status {
+    let mut s = status();
+    let now = jiff::Timestamp::now();
+    s.readings = Some(crate::model::Readings {
+        grid_sensor_connected: true,
+        grid_power_watts: Some(2000.0),
+        ..Default::default()
+    });
+    s.energy = Some(crate::energy::Status {
+        source: "octopus_account",
+        available: true,
+        last_success_unix: Some(hardware::now()),
+        last_error: None,
+        meters: vec![crate::energy::Meter {
+            id: "import-test".into(),
+            is_export: false,
+            tariff_code: Some("TEST".into()),
+            current_rate_gbp_per_kwh: 0.25,
+            standing_charge_gbp_per_day: Some(0.45),
+            schedules: vec![crate::energy::Schedule {
+                day: "current".into(),
+                tariff_code: Some("TEST".into()),
+                rates: vec![crate::energy::Rate {
+                    start: now
+                        .checked_sub(std::time::Duration::from_secs(3600))
+                        .unwrap(),
+                    end: now
+                        .checked_add(std::time::Duration::from_secs(3600))
+                        .unwrap(),
+                    value_inc_vat: 0.25,
+                    is_capped: false,
+                    is_intelligent_adjusted: false,
+                }],
+            }],
+            completed_day: Some(crate::energy::CompletedDay {
+                start: "2026-11-18T00:00:00Z".parse().unwrap(),
+                consumption_kwh: Some(10.575),
+                cost_gbp: 3.06,
+                estimated: true,
+                standing_charge_gbp: Some(0.45),
+            }),
+            consumption: Vec::new(),
+            daily_costs: Vec::new(),
+            consumption_error: None,
+        }],
+    });
+    s
+}
+fn only_cost(payload: &Value) -> &Value {
+    payload["energy"]["meters"]
+        .as_object()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+}
+#[test]
+fn mqtt_costs_have_independent_availability_and_dated_estimates() {
+    let c = config(false);
+    let mut s = cost_status();
+    let payload = snapshot_payload(&c, &s);
+    assert_eq!(only_cost(&payload)["live_gbp_per_hour"], 0.5);
+    assert_eq!(only_cost(&payload)["completed_day"]["cost_gbp"], 3.06);
+    assert_eq!(only_cost(&payload)["completed_day"]["estimated"], true);
+    assert!(only_cost(&payload)["completed_day"]["start"].is_string());
+    assert!(only_cost(&payload).get("consumption").is_none());
+    s.online = false;
+    let payload = snapshot_payload(&c, &s);
+    assert_eq!(payload["energy"]["available"], true);
+    assert_eq!(only_cost(&payload)["current_rate_gbp_per_kwh"], 0.25);
+    assert_eq!(only_cost(&payload)["completed_day"]["cost_gbp"], 3.06);
+    assert!(only_cost(&payload)["live_gbp_per_hour"].is_null());
+    s.energy.as_mut().unwrap().last_success_unix = Some(hardware::now() - 180);
+    let payload = snapshot_payload(&c, &s);
+    assert_eq!(payload["energy"]["available"], false);
+    assert!(only_cost(&payload)["completed_day"].is_null());
+    assert!(only_cost(&payload)["current_rate_gbp_per_kwh"].is_null());
+    assert!(only_cost(&payload)["standing_charge_gbp_per_day"].is_null());
+}
+#[test]
+fn mqtt_export_costs_preserve_negative_prices_and_refuse_ambiguous_plant_power() {
+    let c = config(false);
+    let mut s = cost_status();
+    s.readings.as_mut().unwrap().grid_power_watts = Some(-1000.0);
+    let meter = &mut s.energy.as_mut().unwrap().meters[0];
+    meter.is_export = true;
+    meter.schedules[0].rates[0].value_inc_vat = -0.05;
+    assert_eq!(
+        only_cost(&snapshot_payload(&c, &s))["live_gbp_per_hour"],
+        -0.05
+    );
+    let mut second = s.energy.as_ref().unwrap().meters[0].clone();
+    second.id = "other".into();
+    s.energy.as_mut().unwrap().meters.push(second);
+    let payload = snapshot_payload(&c, &s);
+    for m in payload["energy"]["meters"].as_object().unwrap().values() {
+        assert!(m["live_gbp_per_hour"].is_null());
+    }
+}
+#[test]
+fn cost_discovery_uses_meter_ids_and_does_not_depend_on_inverter_availability() {
+    let c = config(false);
+    let s = cost_status();
+    let doc = discovery::payload(&c, &s);
+    let costs: Vec<_> = doc["components"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(k, _)| k.starts_with("energy_"))
+        .collect();
+    assert_eq!(costs.len(), 4);
+    for (_, entity) in &costs {
+        let availability = entity["availability"].to_string();
+        assert!(availability.contains("value_json.energy.available"));
+        assert!(!availability.contains("value_json.online"));
+        assert_eq!(entity["expire_after"], 90);
+    }
+    let completed = costs
+        .iter()
+        .find(|(k, _)| k.ends_with("completed_cost"))
+        .unwrap()
+        .1;
+    assert_eq!(completed["device_class"], "monetary");
+    assert!(completed.get("state_class").is_none());
+    assert!(
+        completed["json_attributes_template"]
+            .as_str()
+            .unwrap()
+            .contains("completed_day")
+    );
+}
+#[tokio::test]
+async fn broker_receives_retained_costs_even_with_offline_inverter() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut c = config(false);
+    c.host = "127.0.0.1".into();
+    c.port = listener.local_addr().unwrap().port();
+    let mut s = cost_status();
+    s.online = false;
+    let shared = Arc::new(RwLock::new(s));
+    let (commands, _receiver) = mpsc::sync_channel(4);
+    let (stop, stopped) = watch::channel(false);
+    let task = start(c, shared, commands, stopped);
+    let mut broker = Broker::accept(&listener).await;
+    let discovery = broker.topic("homeassistant/device/test_sigen/config").await;
+    let document: Value = serde_json::from_slice(&discovery.payload).unwrap();
+    assert!(
+        document["components"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .any(|k| k.ends_with("completed_cost"))
+    );
+    let message = broker.topic("sigen/test_sigen/state").await;
+    assert!(message.retain);
+    let state: Value = serde_json::from_slice(&message.payload).unwrap();
+    assert_eq!(state["online"], false);
+    assert_eq!(only_cost(&state)["completed_day"]["cost_gbp"], 3.06);
+    stop.send(true).unwrap();
+    // Drive the mock broker while the worker flushes its retained offline message.
+    loop {
+        if broker.next_publish().await.payload.as_ref() == b"offline" {
+            break;
+        }
+    }
+    task.await.unwrap();
+}
