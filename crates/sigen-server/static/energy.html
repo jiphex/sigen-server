@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Energy costs · Sigen</title><link rel="stylesheet" href="/style.css"><script src="/energy.js" defer></script></head>
+<body class="energy-page"><div class="solar-sky" aria-hidden="true"></div><main>
+<header><div><h1>Energy costs</h1><nav aria-label="Main navigation"><a href="/">System status</a> · <a href="/energy" aria-current="page">Energy costs</a></nav></div><button id="refresh" type="button">Refresh</button></header>
+<noscript><p>JavaScript is required to display costs. <a href="/api/status">View status JSON</a>.</p></noscript>
+<p id="energy-health" role="status">Loading tariffs…</p><p id="energy-error" class="failed" role="alert"></p>
+<div class="update-toolbar"><button id="updates-toggle" type="button" aria-describedby="updates-status">Pause updates</button><p id="updates-status" role="status">Automatic updates run every 15 seconds.</p></div>
+<div id="energy-meters"></div>
+<section class="panel"><h2>How to read these costs</h2><p>Rates include VAT. Times and billing days use Europe/London. Completed-day costs come from Home Assistant and include its reported standing charge.</p><p>Live grid costs show the cost or revenue per hour if the current power and rate continued. They exclude standing charges. They are not today’s bill.</p><p>Solar and load comparisons use today’s flat import rate where the entire day is covered. Solar value is the cost of buying the same energy; it is not measured savings. Load value assumes all load was bought from the grid and excludes standing charges. Battery energy cannot be priced reliably without knowing its charging source and time.</p><p>Today’s grid bill is unavailable: the inverter exposes cumulative grid counters rather than daily import/export totals. Variable tariffs require energy usage for each rate interval; daily totals alone cannot determine their cost. Missing export rates are never treated as zero.</p></section>
+<footer><a href="/">System status</a><a href="/api/status">Status JSON</a></footer>
+</main></body></html>

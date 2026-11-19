@@ -742,3 +742,36 @@ Modbus library remains a lower-level API with caller-managed control policy.
 See [COMMISSIONING.md](../../COMMISSIONING.md) for remaining installation verification.
 
 Writable configurations must fit twelve paced request/response exchanges plus five seconds of headroom within the 60-second control deadline. Slower transport settings are supported in read-only mode; writable startup rejects them. Queue waits can still expire without executing a command.
+
+## Octopus tariffs via Home Assistant
+
+The optional read-only tariff reader uses BottlecapDave's Octopus Energy
+integration in Home Assistant. Configure both `SIGEN_HA_URL` (an HTTPS origin,
+for example `https://homeassistant.example.ts.net`) and `SIGEN_HA_TOKEN_FILE`
+(a protected file containing a long-lived access token). The equivalent flags
+are `--ha-url` and `--ha-token-file`. Keep the token outside the repository;
+restrict the file to the server user. The server reads it at startup.
+
+The reader polls every 60 seconds. `/api/status` exposes an `energy` object with
+all available Octopus electricity meters, their current rates in GBP/kWh,
+standing charges in GBP/day, previous/current/next-day rate schedules, and the
+latest completed day's cost and consumption. Completed-day costs already include
+the reported standing charge. Gas and unrelated HA entities are excluded.
+No export rate is assumed when an export meter is absent. Intelligent adjustments
+and capped-rate flags are preserved.
+
+The **Energy costs** link opens `/energy`, showing tariffs, interval schedules,
+completed-day costs, and live import cost/export revenue per hour. When a single
+flat rate covers the whole London day, fresh inverter solar and plant load totals
+are also shown as tariff comparisons, not measured savings or grid bills.
+Multiple meters in the same direction suppress plant-wide cost comparisons.
+Today's bill is not inferred from cumulative grid counters or daily totals under
+variable tariffs. The page refreshes every 15 seconds and supports pausing updates.
+
+`energy` is null when disabled. Its `available` flag becomes false after three
+minutes without a successful poll; the last successful snapshot remains visible
+with `last_success_unix` and `last_error`. Consumers must also check rate interval
+dates before applying a schedule. Credentials and raw HA attributes are never
+included in the snapshot. HTTP redirects are disabled; request errors are
+reported without headers, tokens or response bodies. HA authentication and
+connectivity failures do not interrupt inverter monitoring.

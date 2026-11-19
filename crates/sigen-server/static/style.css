@@ -275,3 +275,10 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12
   .alert-row { grid-template-columns: minmax(0, 1fr); }
   .alert-row > span { border-left: 0; border-top: 1px solid var(--divider); }
 }
+
+.energy-page .energy-cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.energy-page table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.energy-page th, .energy-page td { padding: 12px 10px; text-align: left; border: 1px solid var(--border); }
+.energy-page th { background: var(--surface-alt); }
+.energy-page td { font-family: var(--instrument-font); }
+.energy-page h2, .energy-page .panel > p { overflow-wrap: anywhere; }

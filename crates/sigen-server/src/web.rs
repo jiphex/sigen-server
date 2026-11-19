@@ -28,6 +28,8 @@ pub fn router(state: AppState) -> Router {
         .route("/style.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../static/style.css")) }))
         .route("/lens-flare-light.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], include_bytes!("../static/lens-flare-light.png").as_slice()) }))
         .route("/lens-flare-dark.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], include_bytes!("../static/lens-flare-dark.png").as_slice()) }))
+        .route("/energy", get(|| async { Html(include_str!("../static/energy.html")) }))
+        .route("/energy.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../static/energy.js")) }))
         .route("/api/status", get(status))
         .route("/api/control", post(control))
         .route("/api/alerts", post(update_alert))
@@ -400,6 +402,8 @@ mod tests {
         for path in [
             "/",
             "/?demo=1",
+            "/energy",
+            "/energy.js",
             "/app.js",
             "/demo.js",
             "/style.css",

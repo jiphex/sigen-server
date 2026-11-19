@@ -1,6 +1,7 @@
 mod alerts;
 mod audit;
 mod cli;
+mod energy;
 mod hardware;
 mod journal;
 mod logging;
@@ -61,6 +62,7 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
     };
     hardware::validate_control_timing(&modbus_config)?;
     let freshness_poll = poll + hardware::freshness_grace(&modbus_config).as_secs() - 30;
+    let energy_reader = energy::Reader::new(args.ha_url.as_deref(), args.ha_token_file.as_deref())?;
     let notifier = pushover::Notifier::from_args(&args.pushover)?;
     let write_audit = Arc::new(audit::WriteAuditLog::open(&args.write_audit_file)?);
     let mut mqtt_config =
@@ -111,6 +113,8 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         Duration::from_secs(poll),
         status.clone(),
     );
+    let energy_task =
+        energy_reader.map(|reader| energy::start(reader, status.clone(), stop_receiver.clone()));
     let alerts_task = alerts::start(status.clone(), stop_receiver.clone());
     let mqtt_task = mqtt_config
         .map(|config| mqtt::start(config, status.clone(), commands.clone(), stop_receiver));
@@ -154,6 +158,9 @@ async fn run(args: cli::Cli) -> Result<(), Box<dyn std::error::Error>> {
         let _ = tokio::time::timeout(Duration::from_secs(3), task).await;
     }
     if let Some(task) = pushover_task {
+        let _ = task.await;
+    }
+    if let Some(task) = energy_task {
         let _ = task.await;
     }
     let _ = alerts_task.await;

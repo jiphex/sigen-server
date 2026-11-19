@@ -66,6 +66,12 @@ pub struct Cli {
     pub alerts_file: PathBuf,
     #[command(flatten)]
     pub mqtt: MqttArgs,
+    /// Home Assistant HTTPS origin; enables Octopus electricity tariff polling
+    #[arg(long, env = "SIGEN_HA_URL", requires = "ha_token_file")]
+    pub ha_url: Option<String>,
+    /// File containing a Home Assistant long-lived access token
+    #[arg(long, env = "SIGEN_HA_TOKEN_FILE", requires = "ha_url")]
+    pub ha_token_file: Option<PathBuf>,
     #[command(flatten)]
     pub pushover: PushoverArgs,
 }
