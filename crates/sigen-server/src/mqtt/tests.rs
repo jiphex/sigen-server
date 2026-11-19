@@ -596,12 +596,28 @@ async fn broker_receives_retained_costs_even_with_offline_inverter() {
     let state: Value = serde_json::from_slice(&message.payload).unwrap();
     assert_eq!(state["online"], false);
     assert_eq!(only_cost(&state)["completed_day"]["cost_gbp"], 3.06);
+    // Complete a birth/republication round trip before asking the client to
+    // close. Merely draining initial outgoing traffic does not guarantee that
+    // the client consumed our SUBACK. Closing with that unread broker data can
+    // reset the connection on Linux and discard the shutdown publication.
+    let online = broker.topic("sigen/test_sigen/availability").await;
+    assert_eq!(online.payload.as_ref(), b"online");
+    broker
+        .send(Packet::Publish(Publish::new(
+            "homeassistant/status",
+            QoS::AtMostOnce,
+            "online",
+        )))
+        .await;
+    broker.topic("homeassistant/device/test_sigen/config").await;
+    broker.topic("sigen/test_sigen/availability").await;
     stop.send(true).unwrap();
-    // Drive the mock broker while the worker flushes its retained offline message.
-    loop {
-        if broker.next_publish().await.payload.as_ref() == b"offline" {
-            break;
-        }
-    }
-    task.await.unwrap();
+    let offline = broker.topic("sigen/test_sigen/availability").await;
+    assert!(offline.retain);
+    assert_eq!(offline.payload.as_ref(), b"offline");
+    assert!(matches!(broker.read().await, Packet::Disconnect));
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap();
 }
